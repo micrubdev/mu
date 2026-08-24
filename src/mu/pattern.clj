@@ -210,3 +210,34 @@
 (def rand
   "Continuous noise. Like the other signals, a pure function of time."
   (signal time-rand))
+
+(defn fmap
+  "Apply f to every event value, leaving all timing untouched."
+  [f p]
+  (pat (fn [sp] (map #(update % :value f) (query p sp)))))
+
+(defn app-left
+  "Applicative apply, taking structure from the left.
+
+  `pf` carries functions and decides the timing; `pv` is sampled over
+  each function event's part. The result keeps the left :whole, so
+  onset detection still refers to the structural pattern."
+  [pf pv]
+  (pat (fn [sp]
+         (for [ef   (query pf sp)
+               ev   (query pv (:part ef))
+               :let [part (t/sect (:part ef) (:part ev))]
+               :when part]
+           {:whole (:whole ef)
+            :part  part
+            :value ((:value ef) (:value ev))}))))
+
+(defn with
+  "Merge key k into each event's value map, taking values from `v`.
+
+  `v` may be a Pattern (sampled per event, so it can vary at its own
+  rate) or a plain scalar (lifted with `pure`). Structure always comes
+  from `p`."
+  [p k v]
+  (app-left (fmap (fn [m] (fn [x] (assoc m k x))) p)
+            (if (pattern? v) v (pure v))))

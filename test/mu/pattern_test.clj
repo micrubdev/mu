@@ -147,3 +147,33 @@
         fast-v (:value (first (p/query (p/fast 2 p/saw) [1/4 1/4])))]
     (is (< (Math/abs (- slow-v fast-v)) 1e-9)
         "fast 2 reaches at 1/4 what the unit signal reaches at 1/2")))
+
+(deftest fmap-transforms-values-only
+  (let [evs (p/query (p/fmap inc (p/pure 1)) [0 1])]
+    (is (= [2] (map :value evs)))
+    (is (= [[0 1]] (map :whole evs)) "timing untouched")))
+
+(deftest with-adds-a-key-from-a-scalar
+  (let [pt (p/with (p/pure {:note 60}) :chan 3)]
+    (is (= [{:note 60 :chan 3}] (map :value (p/query pt [0 1]))))))
+
+(deftest with-takes-structure-from-the-left
+  (testing "four notes against three velocities: four events, phasing"
+    (let [notes (p/fastcat (p/pure {:note 60}) (p/pure {:note 62})
+                           (p/pure {:note 64}) (p/pure {:note 65}))
+          vels  (p/fastcat (p/pure 0.9) (p/pure 0.5) (p/pure 0.7))
+          out   (->> (p/query (p/with notes :vel vels) [0 1])
+                     (filter p/onset?)
+                     (sort-by (comp first :part)))]
+      (is (= 4 (count out)) "structure comes from the note pattern")
+      (is (= [60 62 64 65] (map (comp :note :value) out)))
+      (is (= 0.9 (:vel (:value (first out)))) "first note takes the first vel"))))
+
+(deftest with-samples-a-continuous-signal-per-event
+  (let [notes (p/fast 4 (p/pure {:note 60}))
+        out   (->> (p/query (p/with notes :cut p/saw) [0 1])
+                   (filter p/onset?)
+                   (sort-by (comp first :part)))]
+    (is (= 4 (count out)))
+    (is (apply < (map (comp :cut :value) out))
+        "each note samples the rising signal at its own position")))
