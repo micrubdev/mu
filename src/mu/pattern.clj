@@ -130,3 +130,57 @@
                (map (fn [ev] (-> ev (update :part flip) (update :whole flip)))
                     (query p [(refl e) (refl b)]))))
            (t/split-cycles sp)))))
+
+(defn every
+  "Apply f to the pattern on every nth cycle, starting at cycle 0."
+  [n f p]
+  (if (<= n 0)
+    p
+    (let [transformed (f p)]
+      (pat (fn [sp]
+             (mapcat (fn [[b e]]
+                       (let [c (t/floor-cycle b)]
+                         (query (if (zero? (mod c n)) transformed p) [b e])))
+                     (t/split-cycles sp)))))))
+
+(defn- time-rand
+  "Deterministic pseudo-random in [0,1) derived from a time value.
+
+  A stateful PRNG would break the query model: the same span must give
+  the same answer every time, and cycle 400 must be reachable without
+  having played cycles 0-399. This is a pure hash of time."
+  ^double [x]
+  (let [v (Math/sin (* (double x) 12345.6789))
+        r (* v 43758.5453)]
+    (- r (Math/floor r))))
+
+(defn degrade-by
+  "Randomly drop a proportion `amt` of events (0.0 keeps all, 1.0 drops all)."
+  [amt p]
+  (pat (fn [sp]
+         (filter #(>= (time-rand (first (:part %))) (double amt))
+                 (query p sp)))))
+
+(defn- undegrade-by
+  "Keep exactly the events that `degrade-by` with the same amt drops."
+  [amt p]
+  (pat (fn [sp]
+         (filter #(< (time-rand (first (:part %))) (double amt))
+                 (query p sp)))))
+
+(defn degrade
+  "Randomly drop about half the events."
+  [p]
+  (degrade-by 0.5 p))
+
+(defn sometimes-by
+  "Apply f to a proportion `amt` of events, leaving the rest untouched.
+  The two halves are complementary, so no event is lost or duplicated."
+  [amt f p]
+  (stack (degrade-by amt p)
+         (f (undegrade-by amt p))))
+
+(defn sometimes
+  "Apply f to about half the events."
+  [f p]
+  (sometimes-by 0.5 f p))

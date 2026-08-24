@@ -97,3 +97,31 @@
   (let [r (p/rev (p/fastcat (p/pure :a) (p/pure :b) (p/pure :c)))]
     (is (= [:c :b :a] (vals-at r 0)))
     (is (= [:c :b :a] (vals-at r 1)) "reverses each cycle independently")))
+
+(deftest every-applies-f-on-matching-cycles
+  (let [e (p/every 3 (partial p/fast 2) (p/pure :a))]
+    (is (= [:a :a] (vals-at e 0)) "cycle 0 is transformed")
+    (is (= [:a]    (vals-at e 1)))
+    (is (= [:a]    (vals-at e 2)))
+    (is (= [:a :a] (vals-at e 3)) "and again at cycle 3")))
+
+(deftest degrade-drops-roughly-half
+  (let [d (p/degrade (p/fast 16 (p/pure :a)))
+        n (count (filter p/onset? (p/query d [0 8])))]
+    (is (< 40 n 216) (str "expected roughly half of 128 events, got " n))))
+
+(deftest randomness-is-a-pure-function-of-time
+  (testing "querying the same span twice gives identical results"
+    (let [d (p/degrade (p/fast 8 (p/pure :a)))]
+      (is (= (p/query d [10 12]) (p/query d [10 12])))))
+  (testing "a far-future cycle is reachable without playing the ones before"
+    (let [d (p/degrade (p/fast 8 (p/pure :a)))]
+      (is (= (p/query d [400 401]) (p/query d [400 401]))))))
+
+(deftest sometimes-partitions-events-without-losing-any
+  (let [base  (p/fast 16 (p/pure :a))
+        total (count (filter p/onset? (p/query base [0 4])))
+        s     (p/sometimes (fn [_] (p/pure :b)) base)
+        got   (frequencies (map :value (filter p/onset? (p/query s [0 4]))))]
+    (is (pos? (get got :a 0)) "some events were left alone")
+    (is (pos? (get got :b 0)) "some events were transformed")))
