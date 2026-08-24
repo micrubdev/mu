@@ -43,3 +43,60 @@
          (for [[b e] (t/split-cycles sp)
                :let  [c (t/floor-cycle b)]]
            {:whole [c (inc c)] :part [b e] :value v}))))
+
+(defn- with-time
+  "Build a pattern that maps query times through `fwd` and result event
+  times back through `back`. Every linear time transform is this."
+  [fwd back p]
+  (let [shift (fn [s] (when s [(back (first s)) (back (second s))]))]
+    (pat (fn [[b e]]
+           (map (fn [ev] (-> ev
+                             (update :part shift)
+                             (update :whole shift)))
+                (query p [(fwd b) (fwd e)]))))))
+
+(defn fast
+  "Compress a pattern to 1/n of its length, repeating it n times per cycle."
+  [n p]
+  (if (zero? n)
+    silence
+    (with-time #(* % n) #(/ % n) p)))
+
+(defn stack
+  "Play patterns simultaneously."
+  [& ps]
+  (pat (fn [sp] (mapcat #(query % sp) ps))))
+
+(defn slowcat
+  "Play one pattern per cycle, in rotation."
+  [& ps]
+  (let [ps (vec ps)
+        n  (count ps)]
+    (if (zero? n)
+      silence
+      (pat (fn [sp]
+             (mapcat
+               (fn [[b e]]
+                 (let [c   (t/floor-cycle b)
+                       i   (mod c n)
+                       ;; Each sub-pattern should see its OWN cycle count,
+                       ;; not the global one, so `every` inside a slowcat
+                       ;; counts the cycles it actually plays. At global
+                       ;; cycle c the chosen sub-pattern is on its cycle
+                       ;; (quot c n), so we query it back by that offset and
+                       ;; shift the results forward again.
+                       off (- c (Math/floorDiv (long c) (long n)))]
+                   (query (with-time #(- % off) #(+ % off) (nth ps i))
+                          [b e])))
+               (t/split-cycles sp)))))))
+
+(defn fastcat
+  "Squeeze all patterns into a single cycle, one after another."
+  [& ps]
+  (if (empty? ps)
+    silence
+    (fast (count ps) (apply slowcat ps))))
+
+;; Short aliases -- these are the forms actually typed in a performance.
+(def cyc "One item per cycle. Alias of slowcat." slowcat)
+(def sub "Subdivide one cycle. Alias of fastcat." fastcat)
