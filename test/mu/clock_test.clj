@@ -95,3 +95,104 @@
       (is (instance? Long (aget ^objects ats i)) "already a boxed Long")
       (is (= (aget ^longs times i) (aget ^objects ats i))
           "and identical to the primitive time at the same index"))))
+
+(deftest transport-plays-and-stops
+  (let [sink  (m/recording-sink)
+        trans (clk/start! {:sink sink
+                           :voices-fn (constantly {:v {:pattern (notes c4 d4) :chan 0}})
+                           :bpm 480})]   ; 4 cycles/sec -- fast, for a short test
+    (Thread/sleep 1500)
+    (clk/stop! trans)
+    (let [ons (filter #(= :note-on (:type (:spec %))) (m/log sink))]
+      (is (< 3 (count ons)) (str "expected several notes, got " (count ons))))))
+
+(deftest stop-silences-every-sounding-note
+  (let [sink  (m/recording-sink)
+        trans (clk/start! {:sink sink
+                           :voices-fn (constantly {:v {:pattern (p/slow 4 (notes c4))
+                                                       :chan 0}})
+                           :bpm 480})]
+    (Thread/sleep 800)
+    (clk/stop! trans)
+    (let [l    (m/log sink)
+          ons  (filter #(= :note-on  (:type (:spec %))) l)
+          offs (filter #(= :note-off (:type (:spec %))) l)]
+      (is (pos? (count ons)))
+      (is (>= (count offs) (count ons))
+          "every note that started was explicitly stopped"))))
+
+(deftest panic-sends-all-notes-off-on-every-channel
+  (let [sink  (m/recording-sink)
+        trans (clk/start! {:sink sink :voices-fn (constantly {}) :bpm 120})]
+    (Thread/sleep 100)
+    (clk/panic! trans)
+    ;; Snapshot BEFORE stop!, which runs silence-all! again and would
+    ;; double the count.
+    (let [after-panic (m/log sink)]
+      (clk/stop! trans)
+      (let [ccs (filter #(and (= :cc (:type (:spec %)))
+                              (= 123 (:cc (:spec %))))
+                        after-panic)]
+        (is (= 16 (count ccs)) "all-notes-off on all sixteen channels")))))
+
+(deftest active-note-tracking-survives-an-opaque-encoding
+  ;; Regression guard for a bug the recording sink CANNOT catch: its
+  ;; encode is identity, so reading :type off an encoded message happens
+  ;; to work. Any real sink returns something opaque. This sink mimics
+  ;; that, so tracking must read :specs rather than :msgs.
+  (let [emitted (atom [])
+        sink    (reify m/MidiSink
+                  (encode [_ spec] (str "OPAQUE:" (:type spec)))
+                  (emit! [_ enc at] (swap! emitted conj {:at at :enc enc}) nil)
+                  (close-sink! [_] nil))
+        trans   (clk/start! {:sink sink
+                             :voices-fn (constantly
+                                          {:v {:pattern (p/slow 4 (notes c4))
+                                               :chan 0}})
+                             :bpm 480})]
+    (Thread/sleep 800)
+    (clk/stop! trans)
+    (testing "stop! knew a note was sounding and turned it off"
+      (is (some #(= "OPAQUE::note-off" (:enc %)) @emitted)
+          "an explicit note-off means the active table was populated"))))
+
+(deftest tempo-change-re-anchors-instead-of-jumping
+  (let [sink  (m/recording-sink)
+        trans (clk/start! {:sink sink
+                           :voices-fn (constantly {:v {:pattern (notes c4) :chan 0}})
+                           :bpm 480})]
+    (Thread/sleep 800)
+    (clk/set-bpm! trans 960)
+    (Thread/sleep 1500)
+    (clk/stop! trans)
+    (let [ats (map :at (filter #(= :note-on (:type (:spec %))) (m/log sink)))]
+      (is (< 2 (count ats)) "several notes played across the tempo change")
+      (is (apply < ats)
+          "times stay monotonically increasing -- a re-anchoring bug would
+           make future cycles jump backwards or forwards discontinuously"))))
+
+(deftest voices-fn-is-polled-every-cycle
+  (let [calls (atom 0)
+        sink  (m/recording-sink)
+        trans (clk/start! {:sink sink
+                           :voices-fn (fn [] (swap! calls inc) {})
+                           :bpm 480})]
+    (Thread/sleep 900)
+    (clk/stop! trans)
+    (is (< 2 @calls) (str "expected several polls, got " @calls))))
+
+(deftest the-transport-starts-playing-promptly
+  ;; Guards the warm-up lead. It is a fixed wall-clock margin, not a
+  ;; multiple of the cycle length: at 60 bpm two cycles would be an
+  ;; eight-second wait before the first note.
+  (let [sink  (m/recording-sink)
+        t-start (System/nanoTime)
+        trans (clk/start! {:sink sink
+                           :voices-fn (constantly {:v {:pattern (notes c4) :chan 0}})
+                           :bpm 60})]   ; 4s per cycle
+    (Thread/sleep 1000)
+    (clk/stop! trans)
+    (let [ons (filter #(= :note-on (:type (:spec %))) (m/log sink))]
+      (is (= 1 (count ons)) "the first note sounded well inside one cycle")
+      (is (< (- (:at (first ons)) t-start) 1000000000)
+          "and did so less than a second after start!"))))
