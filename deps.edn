@@ -9,7 +9,11 @@
                  {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
    ;; ZGC here too: the clock tests run under the real collector.
    :jvm-opts    ["-XX:+UseZGC" "-XX:+ZGenerational"]
-   :exec-fn     cognitect.test-runner.api/test}
+   :exec-fn     cognitect.test-runner.api/test
+   ;; The runner defaults to #".*-test$", which would silently skip
+   ;; mu.pattern-props -- the algebra's law suite, and the thing most
+   ;; likely to catch a regression. Match the -props namespaces too.
+   :exec-args   {:patterns [".*-test$" ".*-props$"]}}
 
   ;; Performance REPL. AlwaysPreTouch keeps the heap from growing mid-set.
   :live

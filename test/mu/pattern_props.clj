@@ -1,0 +1,75 @@
+(ns mu.pattern-props
+  (:require [clojure.test :refer [deftest is]]
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [clojure.test.check.generators :as gen]
+            [clojure.test.check.properties :as prop]
+            [mu.pattern :as p]))
+
+;; ---- generators -------------------------------------------------------
+
+(def gen-leaf
+  (gen/fmap p/pure (gen/elements [:a :b :c :d])))
+
+(def gen-pattern
+  (gen/recursive-gen
+    (fn [inner]
+      (gen/one-of
+        [(gen/fmap #(apply p/fastcat %) (gen/vector inner 1 3))
+         (gen/fmap #(apply p/slowcat %) (gen/vector inner 1 3))
+         (gen/fmap #(apply p/stack %)   (gen/vector inner 1 2))
+         (gen/fmap (fn [[n q]] (p/fast n q))
+                   (gen/tuple (gen/elements [1 2 3]) inner))
+         (gen/fmap p/rev inner)]))
+    gen-leaf))
+
+(def gen-cycle (gen/choose -4 8))
+
+(defn- norm
+  "Canonical form for comparison: order-insensitive, timing-exact."
+  [evs]
+  (set (map (juxt :whole :part :value) evs)))
+
+;; ---- laws -------------------------------------------------------------
+
+(defspec fast-1-is-identity 100
+  (prop/for-all [q gen-pattern, c gen-cycle]
+    (= (norm (p/query q [c (inc c)]))
+       (norm (p/query (p/fast 1 q) [c (inc c)])))))
+
+(defspec rev-is-its-own-inverse 100
+  (prop/for-all [q gen-pattern, c gen-cycle]
+    (= (norm (p/query q [c (inc c)]))
+       (norm (p/query (p/rev (p/rev q)) [c (inc c)])))))
+
+(defspec fast-and-slow-cancel 100
+  (prop/for-all [q gen-pattern, c gen-cycle, n (gen/elements [2 3 4])]
+    (= (norm (p/query q [c (inc c)]))
+       (norm (p/query (p/fast n (p/slow n q)) [c (inc c)])))))
+
+(defspec nothing-escapes-the-queried-span 200
+  (prop/for-all [q gen-pattern, c gen-cycle]
+    (let [[b e] [c (inc c)]]
+      (every? (fn [{[pb pe] :part}] (and (>= pb b) (<= pe e)))
+              (p/query q [b e])))))
+
+(defspec querying-is-deterministic 100
+  (prop/for-all [q gen-pattern, c gen-cycle]
+    (= (norm (p/query q [c (inc c)]))
+       (norm (p/query q [c (inc c)])))))
+
+(defspec splitting-a-query-is-the-same-as-not-splitting 300
+  ;; THE load-bearing law. Querying [a c] must equal querying [a b]
+  ;; then [b c] for any cycle-aligned b.
+  (prop/for-all [q gen-pattern, c gen-cycle, n (gen/choose 1 4)]
+    (let [a c, z (+ c n)]
+      (= (norm (p/query q [a z]))
+         (norm (mapcat #(p/query q [% (inc %)]) (range a z)))))))
+
+(defspec onsets-are-never-duplicated-across-adjacent-queries 200
+  ;; A note must trigger exactly once no matter how the span is carved.
+  (prop/for-all [q gen-pattern, c gen-cycle]
+    (let [whole-cycle (filter p/onset? (p/query q [c (inc c)]))
+          halves      (filter p/onset?
+                              (concat (p/query q [c (+ c 1/2)])
+                                      (p/query q [(+ c 1/2) (inc c)])))]
+      (= (count whole-cycle) (count halves)))))
