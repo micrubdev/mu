@@ -70,3 +70,30 @@
 (deftest cat-of-nothing-is-silence
   (is (empty? (p/query (p/slowcat) [0 4])))
   (is (empty? (p/query (p/fastcat) [0 4]))))
+
+(deftest fast-repeats-within-the-cycle
+  (is (= [:a :a] (vals-at (p/fast 2 (p/pure :a)) 0)))
+  (is (= [[0 1/2] [1/2 1]]
+         (map :whole (sort-by (comp first :part)
+                              (p/query (p/fast 2 (p/pure :a)) [0 1]))))))
+
+(deftest slow-stretches-across-cycles
+  (let [s (p/slow 2 (p/fastcat (p/pure :a) (p/pure :b)))]
+    (is (= [:a] (vals-at s 0)))
+    (is (= [:b] (vals-at s 1)))))
+
+(deftest late-shifts-forward-in-time
+  (let [l (p/late 1/4 (p/pure :a))
+        [ev] (p/query l [1/4 1/2])]
+    (is (= [1/4 5/4] (:whole ev)) "the event now starts a quarter later")))
+
+(deftest early-is-the-inverse-of-late
+  (let [p (p/fastcat (p/pure :a) (p/pure :b) (p/pure :c))]
+    (is (= (map :whole (sort-by (comp first :part) (p/query p [0 1])))
+           (map :whole (sort-by (comp first :part)
+                                (p/query (p/early 1/4 (p/late 1/4 p)) [0 1])))))))
+
+(deftest rev-reverses-within-each-cycle
+  (let [r (p/rev (p/fastcat (p/pure :a) (p/pure :b) (p/pure :c)))]
+    (is (= [:c :b :a] (vals-at r 0)))
+    (is (= [:c :b :a] (vals-at r 1)) "reverses each cycle independently")))

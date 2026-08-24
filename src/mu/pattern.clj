@@ -100,3 +100,33 @@
 ;; Short aliases -- these are the forms actually typed in a performance.
 (def cyc "One item per cycle. Alias of slowcat." slowcat)
 (def sub "Subdivide one cycle. Alias of fastcat." fastcat)
+
+(defn slow
+  "Stretch a pattern to n cycles long."
+  [n p]
+  (if (zero? n) silence (fast (/ 1 n) p)))
+
+(defn late
+  "Shift a pattern n cycles later in time."
+  [n p]
+  (with-time #(- % n) #(+ % n) p))
+
+(defn early
+  "Shift a pattern n cycles earlier in time."
+  [n p]
+  (late (- n) p))
+
+(defn rev
+  "Reverse a pattern within each cycle. Cycle N stays cycle N; only the
+  contents are mirrored, so `rev` never shifts material between cycles."
+  [p]
+  (pat (fn [sp]
+         (mapcat
+           (fn [[b e]]
+             (let [c    (t/floor-cycle b)
+                   ;; mirror x about the centre of cycle c
+                   refl  (fn [x] (- (+ c (inc c)) x))
+                   flip  (fn [s] (when s [(refl (second s)) (refl (first s))]))]
+               (map (fn [ev] (-> ev (update :part flip) (update :whole flip)))
+                    (query p [(refl e) (refl b)]))))
+           (t/split-cycles sp)))))
