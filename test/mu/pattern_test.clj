@@ -125,3 +125,25 @@
         got   (frequencies (map :value (filter p/onset? (p/query s [0 4]))))]
     (is (pos? (get got :a 0)) "some events were left alone")
     (is (pos? (get got :b 0)) "some events were transformed")))
+
+(deftest signals-are-continuous-and-never-trigger
+  (let [[ev] (p/query p/sine [0 1/4])]
+    (is (nil? (:whole ev)) "no whole -- nothing to trigger")
+    (is (false? (p/onset? ev)))
+    (is (= [0 1/4] (:part ev)))))
+
+(deftest signals-are-sampled-at-the-midpoint-of-the-query
+  (testing "saw rises linearly across the cycle"
+    (let [v (fn [b e] (:value (first (p/query p/saw [b e]))))]
+      (is (< (v 0 1/100) (v 1/2 51/100) (v 99/100 1)))))
+  (testing "all signals stay within 0.0-1.0"
+    (doseq [[nm sig] [["sine" p/sine] ["saw" p/saw] ["tri" p/tri] ["rand" p/rand]]
+            b        (range 0 8)]
+      (let [x (:value (first (p/query sig [b (+ b 1/8)])))]
+        (is (<= 0.0 x 1.0) (str nm " out of range at " b))))))
+
+(deftest signal-rate-changes-with-fast
+  (let [slow-v (:value (first (p/query p/saw [1/2 1/2])))
+        fast-v (:value (first (p/query (p/fast 2 p/saw) [1/4 1/4])))]
+    (is (< (Math/abs (- slow-v fast-v)) 1e-9)
+        "fast 2 reaches at 1/4 what the unit signal reaches at 1/2")))

@@ -184,3 +184,29 @@
   "Apply f to about half the events."
   [f p]
   (sometimes-by 0.5 f p))
+
+(defn signal
+  "A continuous pattern: f maps a time to a value in [0,1].
+
+  Sampled at the midpoint of whatever span is queried, and carries
+  :whole nil so it is never an onset. Change its rate with `fast`."
+  [f]
+  (pat (fn [[b e]]
+         [{:whole nil
+           :part  [b e]
+           :value (f (/ (+ b e) 2))}])))
+
+(def sine
+  (signal (fn [t] (/ (+ 1.0 (Math/sin (* 2.0 Math/PI (double t)))) 2.0))))
+
+(def saw
+  (signal (fn [t] (let [d (double t)] (- d (Math/floor d))))))
+
+(def tri
+  (signal (fn [t] (let [d (double t)
+                        x (- d (Math/floor d))]
+                    (if (< x 0.5) (* 2.0 x) (- 2.0 (* 2.0 x)))))))
+
+(def rand
+  "Continuous noise. Like the other signals, a pure function of time."
+  (signal time-rand))
