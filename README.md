@@ -13,8 +13,10 @@ the next cycle boundary.
 
 ## Status
 
-All sixteen tasks of the v1 plan are implemented: 72 tests, 235 assertions,
-green. The one acceptance criterion not met is timing — see [Timing](#timing).
+All sixteen tasks of the v1 plan are implemented: 74 tests, green. (Two
+`mu.midi` tests need a real audio output line and error out on a headless
+machine — an environment fact, like `begin!` failing there.) The one
+acceptance criterion not met is timing — see [Timing](#timing).
 
 ## Requirements
 
@@ -31,6 +33,10 @@ ZGC is mandatory rather than a preference. Every alias that runs the clock sets
 ```
 clojure -M:live      # nREPL with ZGC and AlwaysPreTouch
 ```
+
+`docs/repl.md` is the longer version of everything below: editor connection,
+the jam-buffer loop, querying patterns with no clock, and working on a machine
+with no audio output.
 
 Open a jam buffer:
 
@@ -181,6 +187,14 @@ encode into flat sorted arrays       receiver.send(msg, -1)
       \___ ArrayBlockingQueue ______> one handoff per cycle
 ```
 
+The render thread paces itself against the wall clock, rendering a cycle only
+once we are within one cycle length of its start. Backpressure cannot come
+from the queue alone: dispatch blocks on message times, so a cycle with no
+messages drains instantly, and a stretch of silence — a transport opened
+before any voice is registered, a long `hush` — would let the renderer spin at
+CPU speed and carry its anchor hours into the future. Nothing registered after
+that would ever sound.
+
 The dispatch thread allocates nothing. It walks primitive arrays with an index
 cursor, and even the timestamps it hands to `emit!` are pre-boxed by the render
 thread — `emit!` takes an `Object`, because Clojure protocol methods cannot be
@@ -252,5 +266,7 @@ GUI.
 
 ## Documents
 
+- `docs/repl.md` — the REPL tutorial: starting one, the jam buffer, reading
+  patterns without a device
 - `docs/superpowers/specs/2026-08-24-mu-design.md` — design spec and rationale
 - `docs/superpowers/plans/2026-08-24-mu.md` — the task-by-task implementation plan
