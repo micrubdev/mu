@@ -82,6 +82,8 @@
 ;; arithmetic in the dispatch loop wants anyway.
 (def ^:private ^:const SPIN-NS 1500000)   ; start spinning 1.5ms out
 
+(def ^:private ^:const PACE-HOP-NS 50000000)   ; 50ms, so stop! is prompt
+
 (def ^:private ^:const START-LEAD-NS 250000000)
 ;; 250 ms. A FIXED wall-clock margin, deliberately not a multiple of the
 ;; cycle length: the lead only has to cover JIT warmup and the first
@@ -93,6 +95,19 @@
   "One cycle is one bar of 4/4, so a cycle is four beats."
   ^long [bpm]
   (long (/ (* 4 60 1e9) (double bpm))))
+
+(defn- wait-until!
+  "Park until `target` nanos, in short hops so stop! stays responsive.
+
+  Render-thread only: unlike the dispatch loop this may allocate and
+  need not be sample-accurate -- it is throttling cycle production, not
+  placing a note."
+  [^long target running?]
+  (loop []
+    (let [remaining (- target (System/nanoTime))]
+      (when (and (pos? remaining) @running?)
+        (LockSupport/parkNanos (min remaining PACE-HOP-NS))
+        (recur)))))
 
 (defn- dispatch-cycle!
   "Walk one rendered cycle, sending each message at its instant.
@@ -169,6 +184,16 @@
                       ;; CURRENT cycle length, a tempo change takes effect at
                       ;; the next boundary with no discontinuity.
                       npc (bpm->nanos-per-cycle @!bpm)
+                      ;; Pace against the wall clock before rendering.
+                      ;; The only other backpressure is the dispatch
+                      ;; thread waiting on message times, and a cycle
+                      ;; with no messages provides none -- so a stretch
+                      ;; of silence (a transport started before any
+                      ;; voice is registered, a long hush) would let
+                      ;; this loop spin at CPU speed, carrying `anchor`
+                      ;; hours into the future. Nothing registered after
+                      ;; that would ever sound.
+                      _   (wait-until! (- anchor npc) running?)
                       vs  (try (voices-fn)
                                (catch Throwable t
                                  (println "mu: voices-fn threw:" (.getMessage t))

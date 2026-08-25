@@ -196,3 +196,34 @@
       (is (= 1 (count ons)) "the first note sounded well inside one cycle")
       (is (< (- (:at (first ons)) t-start) 1000000000)
           "and did so less than a second after start!"))))
+
+(deftest a-voice-added-after-the-transport-starts-still-plays
+  ;; The live-coding path: begin! opens the transport, and play! registers
+  ;; a voice some seconds later. Rendering silence must not run the clock
+  ;; off into the future.
+  (let [sink   (m/recording-sink)
+        !voice (atom {})
+        trans  (clk/start! {:sink sink :voices-fn (fn [] @!voice) :bpm 480})]
+    (Thread/sleep 1000)                                  ; two silent cycles
+    (reset! !voice {:v {:pattern (notes c4 d4) :chan 0}})
+    (Thread/sleep 1500)
+    (clk/stop! trans)
+    (let [ons (filter #(= :note-on (:type (:spec %))) (m/log sink))]
+      (is (< 2 (count ons))
+          (str "expected the late voice to sound, got " (count ons) " notes")))))
+
+(deftest silent-cycles-do-not-run-the-render-thread-away
+  ;; Backpressure comes from the dispatch thread waiting on message times,
+  ;; so a cycle with no messages provides none. Without wall-clock pacing
+  ;; the renderer spins as fast as the CPU allows -- tens of thousands of
+  ;; cycles per second -- and the clock's anchor ends up hours ahead.
+  (let [calls (atom 0)
+        sink  (m/recording-sink)
+        trans (clk/start! {:sink sink
+                           :voices-fn (fn [] (swap! calls inc) {})
+                           :bpm 480})]   ; 0.5s per cycle
+    (Thread/sleep 1000)
+    (clk/stop! trans)
+    (is (< 1 @calls) "the clock is still running")
+    (is (< @calls 12)
+        (str "one poll per cycle plus a little lookahead, got " @calls))))
