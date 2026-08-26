@@ -59,6 +59,16 @@
       (is (= "123456789012345" (:t0 rt)))
       (is (= 123456789012345 (Long/parseLong (:t0 rt)))))))
 
+(deftest t0-above-double-precision-survives-the-real-wire
+  (testing "9007199254740993 is the first long a double cannot represent exactly --
+            a sample below 2^53 can't tell a stringified t0 apart from a raw one,
+            since every integer that small is exact as a double too"
+    (let [huge-t0 9007199254740993
+          c       (assoc sample-cycle :t0 huge-t0)
+          rt      (proto/decode (proto/encode (proto/cycle-msg c sample-state)))]
+      (is (= "9007199254740993" (:t0 rt)))
+      (is (= huge-t0 (Long/parseLong (:t0 rt)))))))
+
 (deftest message-order-survives-the-round-trip
   (let [big  (assoc sample-cycle :events
                     (mapv (fn [i] {:at (+ 123456789012345 i)
