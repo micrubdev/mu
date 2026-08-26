@@ -12,7 +12,7 @@ class FakeSocket {
     FakeSocket.instances.push(this)
   }
   send (s) { this.sent.push(s) }
-  close () { this.readyState = 3; this.onclose && this.onclose() }
+  close () { if (this.readyState === 3) return; this.readyState = 3; this.onclose && this.onclose() }
   open () { this.readyState = 1; this.onopen && this.onopen() }
   receive (s) { this.onmessage && this.onmessage({ data: s }) }
 }
@@ -97,4 +97,14 @@ test('an explicit close stops reconnecting', () => {
   sockets[0].open()
   sock.close()
   expect(timers.length).toBe(0)
+})
+
+test('an explicit close during the backoff window does not reconnect', () => {
+  const { sockets, timers, sock } = harness()
+  sockets[0].open()
+  sockets[0].close()            // unexpected drop, schedules a reconnect
+  expect(timers.length).toBe(1)
+  sock.close()                  // caller gives up while the timer is pending
+  timers[0].fn()                // the pending timer fires anyway
+  expect(sockets.length).toBe(1)   // no new socket was created
 })

@@ -5,6 +5,11 @@ export function nextBackoff (previous) {
   return Math.min(previous * 2, RECONNECT_MAX_MS)
 }
 
+// A JSON WebSocket that reconnects itself.
+//
+// WebSocketImpl and setTimeoutImpl are injected so the whole reconnect
+// state machine is testable without a network or a wall clock -- that
+// state machine is where this kind of code actually goes wrong.
 export function connect (url, {
   onMessage = () => {},
   onOpen = () => {},
@@ -17,6 +22,7 @@ export function connect (url, {
   let stopped = false
 
   const open = () => {
+    if (stopped) return
     ws = new WebSocketImpl(url)
     ws.onopen = () => { backoff = null; onOpen() }
     ws.onmessage = ev => {
