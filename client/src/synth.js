@@ -52,21 +52,43 @@ export function makeSynth (audioContext, { soundfontUrl }) {
   let sequencer = null
 
   return {
-    ready: () => Boolean(synth),
+    // "Ready" means fully wired -- a synth object that exists but never
+    // finished loading its soundfont or registering its sequencer is not
+    // ready, and schedule() below relies on this to decide whether to run.
+    ready: () => Boolean(synth && sequencer),
 
     async start () {
       if (synth) return
       await audioContext.resume()
-      await audioContext.audioWorklet.addModule(LIBFLUIDSYNTH_URL)
-      await audioContext.audioWorklet.addModule(WORKLET_URL)
-      synth = new AudioWorkletNodeSynthesizer()
-      synth.init(audioContext.sampleRate)
-      const node = synth.createAudioNode(audioContext)
-      node.connect(audioContext.destination)
-      const sf2 = await fetch(soundfontUrl).then(r => r.arrayBuffer())
-      await synth.loadSFont(sf2)
-      sequencer = await synth.createSequencer()
-      await sequencer.registerSynthesizer(synth)
+      try {
+        // fetch() does not reject on a 404 -- it resolves with an error
+        // page's bytes, which loadSFont would otherwise happily try to
+        // parse as a soundfont. A missing .sf2 is the *documented* normal
+        // case (see client/public/README.md), so this has to fail loud
+        // rather than leave a half-built synth behind.
+        const res = await fetch(soundfontUrl)
+        if (!res.ok) {
+          throw new Error(`soundfont fetch failed: ${res.status} ${soundfontUrl}`)
+        }
+        const sf2 = await res.arrayBuffer()
+
+        await audioContext.audioWorklet.addModule(LIBFLUIDSYNTH_URL)
+        await audioContext.audioWorklet.addModule(WORKLET_URL)
+        synth = new AudioWorkletNodeSynthesizer()
+        synth.init(audioContext.sampleRate)
+        const node = synth.createAudioNode(audioContext)
+        node.connect(audioContext.destination)
+        await synth.loadSFont(sf2)
+        sequencer = await synth.createSequencer()
+        await sequencer.registerSynthesizer(synth)
+      } catch (e) {
+        // Leave no half-built state behind: ready() must go back to false
+        // and a later start() must actually retry rather than returning
+        // early on `if (synth) return` above.
+        synth = null
+        sequencer = null
+        throw e
+      }
     },
 
     // Hand every event to the sequencer with its own time -- the sequencer
