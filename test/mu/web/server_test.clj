@@ -5,10 +5,11 @@
             [mu.player :as pl]
             [mu.tap :as tap]
             [mu.web.protocol :as proto]
+            [mu.web.repl :as repl]
             [mu.web.server :as server]
             [nrepl.server :as nrepl-server]
             [org.httpkit.client :as http])
-  (:import [java.net URI]
+  (:import [java.net ServerSocket URI]
            [java.net.http HttpClient WebSocket WebSocket$Listener]
            [java.util.concurrent TimeUnit]))
 
@@ -41,6 +42,24 @@
     (fn [nrepl-port]
       (let [s (server/start! {:port 0 :nrepl-port nrepl-port :root "client/dist"})]
         (try (f s) (finally (server/stop! s) (tap/reset-all!)))))))
+
+(defn- unused-port
+  "A port nothing is listening on, for testing an unreachable nREPL. Bind
+  to port 0, read back what the OS picked, then release it immediately --
+  good enough for a test's narrow window, not a general-purpose reservation."
+  []
+  (with-open [ss (ServerSocket. 0)]
+    (.getLocalPort ss)))
+
+(defn- with-server-nrepl-port
+  "Like with-repl-server, but points :nrepl-port at a caller-chosen port
+  instead of spinning up a real nREPL -- for exercising what happens when
+  that port has nothing listening on it."
+  [nrepl-port f]
+  (tap/reset-all!)
+  (pl/reset-all!)
+  (let [s (server/start! {:port 0 :nrepl-port nrepl-port :root "client/dist"})]
+    (try (f s) (finally (server/stop! s) (tap/reset-all!)))))
 
 (defn- ws-connect
   "Open a real WebSocket, collecting decoded frames into an atom. Returns
@@ -208,3 +227,58 @@
         (Thread/sleep 200)
         (is (= 0 (count @(:!repl-sessions s)))
             "no nREPL session was ever created for a channel that only connected")))))
+
+;; A failed nREPL connect must not poison the session forever, and it must
+;; not be able to prevent stop! from actually releasing the port.
+
+(deftest a-repl-frame-against-an-unreachable-nrepl-gets-err-then-done
+  (with-server-nrepl-port (unused-port)
+    (fn [s]
+      (let [!f (atom [])
+            ch (ws-connect (:port s) "/repl" !f)]
+        (ws-send! ch (proto/encode {:t "eval" :id "d1" :code "1" :ns "user"}))
+        (is (some? (wait-for !f #(= "done" (:t %)))))
+        (is (some #(= "err" (:t %)) @!f)
+            "the browser is told the connect failed, instead of silence")
+        (is (every? #(= "d1" (:id %)) @!f) "every frame carries the request id")
+        (is (= 0 (count @(:!repl-sessions s)))
+            "the failed attempt left no entry behind to poison the next one")))))
+
+(deftest a-failed-connect-is-retried-not-cached
+  (let [port (unused-port)]
+    (with-server-nrepl-port port
+      (fn [s]
+        (let [!f (atom [])
+              ch (ws-connect (:port s) "/repl" !f)]
+          (ws-send! ch (proto/encode {:t "eval" :id "e1" :code "1" :ns "user"}))
+          (is (some? (wait-for !f #(= "done" (:t %)))))
+          (is (some #(= "err" (:t %)) @!f) "the first attempt fails: nothing is listening yet")
+          (is (= 0 (count @(:!repl-sessions s))) "eviction left the map empty")
+          (let [nrepl (nrepl-server/start-server :port port)]
+            (try
+              (ws-send! ch (proto/encode {:t "eval" :id "e2" :code "(+ 1 1)" :ns "user"}))
+              (is (some? (wait-for !f #(and (= "done" (:t %)) (= "e2" (:id %))))))
+              (is (= "2" (->> @!f (filter #(and (= "value" (:t %)) (= "e2" (:id %)))) first :s))
+                  "the second attempt, made after the nREPL came up, actually connected -- the first failure was not cached and rethrown forever")
+              (finally (nrepl-server/stop-server nrepl)))))))))
+
+(deftest stop!-completes-even-with-a-poisoned-repl-session
+  (tap/reset-all!)
+  (pl/reset-all!)
+  (let [dead-port (unused-port)
+        s (server/start! {:port 0 :nrepl-port dead-port :root "client/dist"})]
+    ;; Install a poisoned session directly -- realized?, and its deref
+    ;; rethrows -- rather than relying on get-session!'s own eviction having
+    ;; already cleaned it up, so this test proves stop! survives regardless.
+    (let [d (delay (repl/connect! {:port dead-port}))]
+      (try @d (catch Throwable _ nil))
+      (swap! (:!repl-sessions s) assoc :poisoned d))
+    (let [port (:port s)]
+      (server/stop! s)
+      (is (empty? @(:!repl-sessions s)) "the session map was cleared despite the poisoned entry")
+      (is (empty? @(:!hud-clients s)) "the client set was cleared")
+      (let [s2 (try (server/start! {:port port :nrepl-port nil :root "client/dist"})
+                    (catch Exception e e))]
+        (is (map? s2) "the HTTP port was actually released, so a fresh server could bind it")
+        (when (map? s2) (server/stop! s2))))
+    (tap/reset-all!)))

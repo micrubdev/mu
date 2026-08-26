@@ -73,33 +73,58 @@
   one is side-effect free, so it is safe inside `swap!`, and no matter how
   many `:on-receive` callbacks race here concurrently for the same
   channel, only the winning delay is ever installed, and only that one is
-  ever dereffed -- so connect! runs exactly once per channel."
+  ever dereffed.
+
+  A `delay` caches a thrown exception exactly as readily as a value: once
+  `connect!` fails, `realized?` is true forever after and every later
+  deref rethrows that same stale failure with no retry. So a failed deref
+  evicts its own entry here -- but only if it is still the very delay this
+  call installed or found, so a concurrent winner's healthy entry is never
+  clobbered -- and lets the caller handle the failure. The next frame then
+  starts over with a fresh delay instead of the cached exception."
   [!repl-sessions nrepl-port ch]
-  (-> (swap! !repl-sessions update ch #(or % (delay (repl/connect! {:port nrepl-port}))))
-      (get ch)
-      deref))
+  (let [d (-> (swap! !repl-sessions update ch #(or % (delay (repl/connect! {:port nrepl-port}))))
+              (get ch))]
+    (try
+      @d
+      (catch Throwable t
+        (swap! !repl-sessions (fn [m] (if (identical? (get m ch) d) (dissoc m ch) m)))
+        (throw t)))))
 
 (defn- on-repl-frame [!repl-sessions nrepl-port ch raw]
   (when-let [{:keys [t id code ns prefix]} (proto/decode raw)]
-    (let [sess (get-session! !repl-sessions nrepl-port ch)
-          send (fn [f] (try (hk/send! ch (proto/encode f)) (catch Throwable _ nil)))]
-      (case t
-        "eval"      (repl/eval! sess id code ns send)
-        "complete"  (repl/op! sess id {:op "completions" :prefix prefix :ns (or ns "user")} send)
-        "info"      (repl/op! sess id {:op "lookup" :sym prefix :ns (or ns "user")} send)
-        "interrupt" (repl/op! sess id {:op "interrupt"} send)
-        nil))))
+    (let [send (fn [f] (try (hk/send! ch (proto/encode f)) (catch Throwable _ nil)))]
+      (try
+        (let [sess (get-session! !repl-sessions nrepl-port ch)]
+          (case t
+            "eval"      (repl/eval! sess id code ns send)
+            "complete"  (repl/op! sess id {:op "completions" :prefix prefix :ns (or ns "user")} send)
+            "info"      (repl/op! sess id {:op "lookup" :sym prefix :ns (or ns "user")} send)
+            "interrupt" (repl/op! sess id {:op "interrupt"} send)
+            nil))
+        (catch Throwable e
+          ;; The nREPL this tab bridges to could not be reached (or the
+          ;; session otherwise failed to open). Answer the browser the way
+          ;; every other failure path does -- err then done, carrying the
+          ;; request id -- rather than letting the exception unwind through
+          ;; http-kit's worker thread in silence.
+          (send {:t "err" :id id :s (str "repl bridge: " (.getMessage e))})
+          (send {:t "done" :id id}))))))
+
+(defn- close-session!
+  "Close a session if it ever actually opened. Never throws: a poisoned or
+  half-open session must not be able to prevent a shutdown. `realized?` is
+  true for a poisoned delay too (the exception is cached the same as a
+  value would be) so the deref inside this try is what actually needs the
+  guard, not just the close."
+  [d]
+  (when (realized? d)
+    (try (repl/close! @d) (catch Throwable _ nil))))
 
 (defn- repl-handler [!repl-sessions nrepl-port req]
   (hk/as-channel req
     {:on-close   (fn [ch _]
-                   ;; `realized?` matters: a channel that closes before its
-                   ;; first /repl frame never got a delay installed, or got
-                   ;; one that was never dereffed -- either way, dereffing
-                   ;; here would open a connection just to immediately
-                   ;; close it.
-                   (when-let [d (get @!repl-sessions ch)]
-                     (when (realized? d) (repl/close! @d)))
+                   (when-let [d (get @!repl-sessions ch)] (close-session! d))
                    (swap! !repl-sessions dissoc ch))
      :on-receive (fn [ch raw] (on-repl-frame !repl-sessions nrepl-port ch raw))}))
 
@@ -162,8 +187,10 @@
 
 (defn stop! [{:keys [running? stop-fn !hud-clients !repl-sessions]}]
   (reset! running? false)
-  (doseq [[_ d] @!repl-sessions]
-    (when (realized? d) (repl/close! @d)))
+  ;; close-session! never throws, so a poisoned or half-open session in the
+  ;; map cannot abort this cleanup before the atoms are reset and the HTTP
+  ;; server is actually released.
+  (doseq [[_ d] @!repl-sessions] (close-session! d))
   (reset! !repl-sessions {})
   (reset! !hud-clients #{})
   (hk/server-stop! stop-fn)
