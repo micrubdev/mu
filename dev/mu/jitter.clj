@@ -11,7 +11,8 @@
   (:require [mu.clock :as clk]
             [mu.midi :as midi]
             [mu.notation :refer [notes]]
-            [mu.pattern :as p]))
+            [mu.pattern :as p]
+            [mu.tap]))
 
 (defrecord TimestampingSink [!log]
   midi/MidiSink
@@ -56,3 +57,9 @@
     (println (if (<= (:p99 r) 1.0)
                "  PASS -- meets the spec section 8 target on this machine."
                "  FAIL -- p99 over budget. Check ZGC is on; then see spec section 8."))))
+
+(defn -main-tapped [& _]
+  (let [tp (mu.tap/subscribe!)
+        drain (doto (Thread. #(while true (mu.tap/poll! tp 100)))
+                (.setDaemon true) (.start))]
+    (-main)))

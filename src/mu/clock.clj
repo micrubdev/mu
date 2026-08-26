@@ -4,7 +4,8 @@
   `render-cycle` is pure and thread-free: all the scheduling logic is
   testable without starting anything. The threads in Task 14 wrap it."
   (:require [mu.midi :as midi]
-            [mu.pattern :as p])
+            [mu.pattern :as p]
+            [mu.tap :as tap])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]
            [java.util.concurrent.locks LockSupport]))
 
@@ -206,6 +207,23 @@
                   ;; sink while leaving notes untracked in production.
                   (dotimes [i n]
                     (track-active! active (aget ^objects (:specs r) i)))
+                  ;; Observers (the web HUD) see the cycle here, on the
+                  ;; thread that is allowed to allocate, a full cycle
+                  ;; before dispatch sends any of it. `any?` keeps the
+                  ;; cost at one atom read when nobody is watching, and
+                  ;; `publish!` drops rather than blocks when someone is
+                  ;; watching badly. The dispatch thread never learns
+                  ;; that observers exist.
+                  (when (tap/any?)
+                    (tap/publish!
+                      {:cycle  cyc
+                       :t0     anchor
+                       :npc    npc
+                       :events (let [times ^longs (:times r)
+                                     specs ^objects (:specs r)]
+                                 (mapv (fn [i] {:at   (aget times i)
+                                                :spec (aget specs i)})
+                                       (range n)))}))
                   ;; Offer with a timeout rather than a blocking put, so a
                   ;; stopped dispatch thread cannot wedge the renderer.
                   (loop []
