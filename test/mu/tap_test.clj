@@ -8,6 +8,12 @@
   (is (false? (tap/any?)))
   (is (nil? (tap/publish! :x))))
 
+(deftest nil-publish-is-a-no-op
+  (let [t (tap/subscribe!)]
+    (is (nil? (tap/publish! nil)))
+    (is (zero? (tap/dropped t)))
+    (is (nil? (tap/poll! t 10)))))
+
 (deftest a-subscriber-receives-published-values-in-order
   (let [t (tap/subscribe!)]
     (is (true? (tap/any?)))

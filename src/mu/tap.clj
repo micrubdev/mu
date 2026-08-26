@@ -6,6 +6,7 @@
   an observer that stops draining loses cycles, and the transport does
   not notice. That direction is deliberate -- the performance outranks
   the display."
+  (:refer-clojure :exclude [any?])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]
            [java.util.concurrent.atomic AtomicLong]))
 
@@ -34,9 +35,13 @@
 (defn publish!
   "Offer `v` to every subscriber. Never blocks, never throws."
   [v]
-  (doseq [^Tap t @!taps]
-    (when-not (.offer ^ArrayBlockingQueue (.-q t) v)
-      (.incrementAndGet ^AtomicLong (.-drops t))))
+  ;; Guard against nil to prevent ArrayBlockingQueue.offer() throwing
+  ;; NullPointerException. The render thread must never crash; a bad value
+  ;; just vanishes here rather than taking down the transport.
+  (when-not (nil? v)
+    (doseq [^Tap t @!taps]
+      (when-not (.offer ^ArrayBlockingQueue (.-q t) v)
+        (.incrementAndGet ^AtomicLong (.-drops t)))))
   nil)
 
 (defn poll!
