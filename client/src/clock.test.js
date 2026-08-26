@@ -48,6 +48,12 @@ test('precision survives instants beyond 2^53', () => {
   // Millisecond-scale delta (999_999n) catches rounding errors at this magnitude.
   const d_ms = clock.toAudioTime(big + 999_999n) - clock.toAudioTime(big)
   expect(d_ms).toBeCloseTo(0.000999999, 9)
+})
+
+test('nanosecond resolution survives instants beyond 2^53', () => {
+  // 9007199254740993 is the first integer a double cannot represent.
+  const big = 9_007_199_254_740_993n
+  clock.addSample({ sentAt: 10.0, receivedAt: 10.0, serverNanos: big })
   // Nanosecond-scale delta (1n) catches the precision bug at the finest scale.
   const d_ns = clock.toAudioTime(big + 1n) - clock.toAudioTime(big)
   expect(d_ns).toBeCloseTo(0.000000001, 9)
