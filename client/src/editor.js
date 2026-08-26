@@ -28,7 +28,14 @@ export function topLevelFormAt (text, pos) {
         while (prefixStart > 0 && '#_\'`~@^'.includes(text[prefixStart - 1])) {
           prefixStart--
         }
-        start = prefixStart
+        // Delimiter guard: prefix run must be preceded by whitespace, bracket,
+        // or buffer start. Otherwise it's the tail of a preceding symbol.
+        const charBefore = prefixStart > 0 ? text[prefixStart - 1] : null
+        const isValidDelimiter = charBefore === null || /\s|[(){}\[\]]/.test(charBefore)
+        // If leftmost char of run is bare `_`, reject (only meaningful in `#_`)
+        const runStart = text[prefixStart]
+        const isBarePrefixUnderscore = runStart === '_' && !text.slice(prefixStart, i).includes('#')
+        start = (isValidDelimiter && !isBarePrefixUnderscore) ? prefixStart : i
       }
       depth++
     } else if (ch === ')' || ch === ']' || ch === '}') {

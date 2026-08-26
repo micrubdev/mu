@@ -75,3 +75,21 @@ test('findNamespace ignores (ns ...) inside a string', () => {
   const s = `(def doc "(ns fake)")\n(ns real)\n`
   expect(findNamespace(s)).toBe('real')
 })
+
+test('a symbol ending in quote does not swallow the prefix', () => {
+  const s = `state'(next-fn 1)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('next-fn'))
+  expect(s.slice(from, to)).toBe('(next-fn 1)')
+})
+
+test('a symbol ending in underscore does not swallow the prefix', () => {
+  const s = `x_(foo 1)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('foo'))
+  expect(s.slice(from, to)).toBe('(foo 1)')
+})
+
+test('a legitimately quoted form at line start keeps its quote', () => {
+  const s = `(def a 1)\n'(1 2 3)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('1 2 3'))
+  expect(s.slice(from, to)).toBe("'(1 2 3)")
+})
