@@ -14,6 +14,7 @@
 (defonce ^:private !soloed    (atom nil))
 (defonce ^:private !last-good (atom {}))
 (defonce ^:private !transport (atom nil))
+(defonce ^:private !errors    (atom {}))
 
 (defn voices [] @!voices)
 
@@ -36,18 +37,21 @@
 (defn safe-render
   "Query one voice for one cycle, surviving anything the pattern does.
 
-  On success the events are cached as that voice's last good cycle. On
-  failure the error is reported to the REPL and the cached cycle is
-  replayed, so a typo costs you the edit -- not the performance."
+  On success the events are cached as that voice's last good cycle and any
+  recorded error is cleared. On failure the error is reported to the REPL,
+  recorded for the HUD, and the cached cycle is replayed, so a typo costs
+  you the edit -- not the performance."
   [k cycle-n]
   (let [v (get (current-voices) k)]
     (try
       (let [evs (doall (p/query (:pattern v) [cycle-n (inc cycle-n)]))]
         (swap! !last-good assoc k evs)
+        (swap! !errors dissoc k)
         evs)
       (catch Throwable t
         (println (str "mu: voice " k " threw (" (.getMessage t)
                       ") -- replaying last good cycle"))
+        (swap! !errors assoc k (str (.getMessage t)))
         (get @!last-good k [])))))
 
 (defn play!
@@ -59,13 +63,14 @@
    (swap! !voices assoc k (merge {:pattern x :chan 0} opts))
    k))
 
-(defn stop-voice! [k] (swap! !voices dissoc k) (swap! !last-good dissoc k) k)
+(defn stop-voice! [k] (swap! !voices dissoc k) (swap! !last-good dissoc k) (swap! !errors dissoc k) k)
 
 (defn hush
   "Stop every voice and silence anything sounding."
   []
   (reset! !voices {})
   (reset! !last-good {})
+  (reset! !errors {})
   (when-let [t @!transport] (clk/panic! t))
   :hushed)
 
@@ -84,7 +89,7 @@
   "Clear all registry state. Used by tests and between sessions."
   []
   (reset! !voices {}) (reset! !muted #{}) (reset! !soloed nil)
-  (reset! !last-good {})
+  (reset! !last-good {}) (reset! !errors {})
   :reset)
 
 (defn begin!
@@ -110,3 +115,23 @@
 (defn bpm [n]
   (when-let [t @!transport] (clk/set-bpm! t n))
   n)
+
+(defn state
+  "A full snapshot of what the performance looks like right now.
+
+  A snapshot rather than a delta on purpose: the HUD feed drops cycles
+  under load, and a consumer that receives whole states never has to
+  reconstruct anything after a gap."
+  []
+  (let [solo @!soloed
+        mute @!muted
+        errs @!errors
+        t    @!transport]
+    {:playing? (boolean t)
+     :bpm      (when t @(:bpm t))
+     :voices   (into {}
+                     (for [[k v] @!voices]
+                       [k {:chan    (get v :chan 0)
+                           :muted?  (contains? mute k)
+                           :soloed? (= solo k)
+                           :error   (get errs k)}]))}))
