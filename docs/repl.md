@@ -43,6 +43,51 @@ clojure -M -e "(require '[mu.live :refer :all] '[mu.pattern :as p])
 without killing the JVM. The clock threads are daemons and die with the
 process, but call `(end!)` first so the port closes cleanly.
 
+## The web view
+
+`:web` is another way to start the same kind of REPL as `:live` — nREPL
+plus a terminal prompt — with the web namespaces on the classpath too, and
+its own nREPL port fixed at 7888 rather than random, because you're about
+to hand that number to `web!`:
+
+```
+clojure -M:web
+```
+
+```clojure
+(require '[mu.live :refer :all])
+(web! {:nrepl-port 7888})
+;=> "http://localhost:7890"
+```
+
+`:nrepl-port` must be the port *this* process's nREPL is actually
+listening on — 7888, given the alias above. Get it wrong (or leave it out)
+and the browser's editor pane goes read-only and its `/repl` socket
+returns 503; the HUD — voice list, cycle events — keeps working regardless,
+since it doesn't touch the nREPL bridge at all.
+
+`web!` starts an HTTP server and two WebSockets and returns the base URL.
+`/hud` broadcasts what the render thread taps off the clock; `/repl`
+bridges to the nREPL connection above, so an editor attached to 7888 and
+the browser can evaluate into the same process at once. `:port` picks the
+HTTP port (default 7890; `:port 0`, as the test suite uses, binds a free
+one so parallel test runs don't collide). Calling `web!` again replaces
+the running server rather than piling up a second one; `(web-off!)` stops
+it and is a no-op if nothing is running.
+
+**The browser client itself is not built yet** — that's a separate plan.
+Today, opening the returned URL in a browser 404s: `web!` stands up the
+server side (HTTP, `/hud`, `/repl`, the nREPL bridge) with nothing yet
+serving a page at `/`. What already works is the transport underneath it —
+a WebSocket client speaking the project's wire protocol can connect to
+`/hud` and watch cycle events arrive, or to `/repl` and drive this
+process's REPL, before there is anything to look at in a browser.
+
+Called from a REPL that was *not* started with `:web` — a plain `:live`
+session, say — `web!` doesn't throw. `mu.live` itself stays
+dependency-free, so without the web namespaces on the classpath it prints
+a message telling you to restart under `:web`, and returns.
+
 ## The jam buffer
 
 Don't type music at the prompt. Keep a scratch file open in your editor and

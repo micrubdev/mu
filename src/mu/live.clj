@@ -44,3 +44,19 @@
   mu.player/solo      mu.player/unsolo
   mu.player/begin!    mu.player/end!     mu.player/bpm
   mu.player/voices)
+
+(defn web!
+  "Start the browser view. Requires the :web alias -- mu's core carries
+  no dependencies, so the web namespaces are not on the default
+  classpath. See README."
+  [& args]
+  (if-let [v (try (requiring-resolve 'mu.web/web!)
+                  (catch Throwable _ nil))]
+    (apply v args)
+    (println "mu: the web view needs the :web alias. Start with"
+             "`clojure -M:web -m nrepl.cmdline --interactive`.")))
+
+(defn web-off! []
+  (when-let [v (try (requiring-resolve 'mu.web/web-off!)
+                    (catch Throwable _ nil))]
+    (v)))

@@ -62,6 +62,29 @@ the `:refer-clojure :exclude`. (`every?` is core; `every` is not.)
 ALSA or CoreMIDI that is just `Gervill` and `Real Time Sequencer` — an
 environment fact, not an error.
 
+## Web view
+
+```
+clojure -M:web        # nREPL on 7888, with the web namespaces available
+```
+
+```clojure
+(web! {:nrepl-port 7888})   ;=> "http://localhost:7890"
+```
+
+A browser editor and performance HUD: modal vim over CodeMirror, the live
+voice list, the current cycle's events, and the same notes rendered through
+a soundfont in the browser. Eval goes to this process's nREPL, so an editor
+and the browser can be attached at once.
+
+The server side of this (HTTP, the `/hud` and `/repl` WebSockets, the nREPL
+bridge) is what `web!` starts. The browser client itself is a separate,
+not-yet-built plan — until it lands, the URL 404s on `/` and the sockets
+are only reachable by something that speaks the wire protocol directly.
+
+The web view carries dependencies (http-kit, cheshire, nREPL); mu's core
+does not, which is why it lives behind the `:web` alias.
+
 ## Notation
 
 `notes` is a macro, so bare symbols are never resolved as vars. A symbol's
