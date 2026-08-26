@@ -3,9 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run copy-worklet-assets",
+    "prebuild": "npm run copy-worklet-assets",
     "dev": "vite",
     "build": "vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "copy-worklet-assets": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('node_modules/js-synthesizer/externals/libfluidsynth-2.4.6.js','public/libfluidsynth-2.4.6.js');fs.copyFileSync('node_modules/js-synthesizer/dist/js-synthesizer.worklet.js','public/js-synthesizer.worklet.js')\""
   },
   "devDependencies": {
     "vite": "^6.0.0",

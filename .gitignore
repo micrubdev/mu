@@ -7,3 +7,10 @@ target/
 client/dist/*
 !client/dist/.gitkeep
 client/node_modules
+
+# Soundfont (licence varies, user-supplied) and js-synthesizer's worklet
+# assets (copied from node_modules by the predev/prebuild npm scripts --
+# node_modules stays the single source of the version).
+client/public/*.sf2
+client/public/libfluidsynth-2.4.6.js
+client/public/js-synthesizer.worklet.js
