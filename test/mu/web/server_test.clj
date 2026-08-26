@@ -9,7 +9,8 @@
             [mu.web.server :as server]
             [nrepl.server :as nrepl-server]
             [org.httpkit.client :as http])
-  (:import [java.net ServerSocket URI]
+  (:import [java.io BufferedReader InputStreamReader]
+           [java.net ServerSocket Socket URI]
            [java.net.http HttpClient WebSocket WebSocket$Listener]
            [java.util.concurrent TimeUnit]))
 
@@ -143,6 +144,7 @@
   (testing "an ES module served as text/plain is refused by every browser"
     (with-server
       (fn [s]
+        (io/make-parents "client/dist/probe.js")
         (spit "client/dist/probe.js" "export const x = 1")
         (try
           (let [resp @(http/get (str "http://127.0.0.1:" (:port s) "/probe.js"))]
@@ -150,11 +152,50 @@
             (is (re-find #"text/javascript" (get-in resp [:headers :content-type]))))
           (finally (io/delete-file "client/dist/probe.js" true)))))))
 
+(deftest content-type-lookup-is-case-insensitive
+  (testing "an uppercase extension must not fall through to octet-stream"
+    (with-server
+      (fn [s]
+        (io/make-parents "client/dist/Probe.JS")
+        (spit "client/dist/Probe.JS" "export const x = 1")
+        (try
+          (let [resp @(http/get (str "http://127.0.0.1:" (:port s) "/Probe.JS"))]
+            (is (= 200 (:status resp)))
+            (is (re-find #"text/javascript" (get-in resp [:headers :content-type]))))
+          (finally (io/delete-file "client/dist/Probe.JS" true)))))))
+
 (deftest path-traversal-is-refused
   (with-server
     (fn [s]
       (let [resp @(http/get (str "http://127.0.0.1:" (:port s) "/../../deps.edn"))]
         (is (= 404 (:status resp)))))))
+
+(defn- raw-http-status-line
+  "Send a literal request line over a plain socket, bypassing any client
+  library's own URI normalisation, and return the response's status line.
+
+  http-kit's client (used above) collapses \"..\" out of a URI before the
+  request ever reaches the wire, so a test built on it can pass even if
+  the traversal guard in `static` does nothing at all. This drives the
+  wire directly so the guard is actually exercised."
+  [port ^String request-line]
+  (with-open [sock (Socket. "127.0.0.1" (int port))]
+    (doto (.getOutputStream sock)
+      (.write (.getBytes (str request-line "\r\n"
+                              "Host: 127.0.0.1\r\n"
+                              "Connection: close\r\n\r\n")))
+      (.flush))
+    (let [in (BufferedReader. (InputStreamReader. (.getInputStream sock)))]
+      (.readLine in))))
+
+(deftest raw-path-traversal-request-is-refused
+  (testing "a literal \"..\" that a well-behaved HTTP client would normalise away first"
+    (with-server
+      (fn [s]
+        (let [status-line (raw-http-status-line (:port s) "GET /../../deps.edn HTTP/1.1")]
+          (is (some? status-line) "the server responded instead of hanging up")
+          (is (re-find #"404" status-line)
+              (str "expected a 404 status line, got: " status-line)))))))
 
 (deftest unknown-frames-are-ignored
   (with-server
@@ -244,6 +285,32 @@
         (is (= 0 (count @(:!repl-sessions s)))
             "the failed attempt left no entry behind to poison the next one")))))
 
+(deftest a-repl-connect-to-an-open-but-silent-port-times-out-instead-of-hanging-forever
+  ;; The dangerous case isn't a closed port (ECONNREFUSED is instant) --
+  ;; it's a port that accepts the connection and then never speaks nREPL,
+  ;; which used to block whatever thread called connect! forever (an
+  ;; unbounded response timeout on the new-session handshake). Easy to
+  ;; hit: :nrepl-port one digit off from the web port in the same docs.
+  (let [ss (ServerSocket. 0)
+        accepting (future (try (while true (.accept ss)) (catch Throwable _ nil)))]
+    (try
+      (with-server-nrepl-port (.getLocalPort ss)
+        (fn [s]
+          (let [!f (atom [])
+                ch (ws-connect (:port s) "/repl" !f)]
+            (ws-send! ch (proto/encode {:t "eval" :id "f1" :code "1" :ns "user"}))
+            ;; The handshake timeout alone is several seconds, so this
+            ;; needs more patience than the usual 3s wait-for.
+            (is (some? (loop [n 0]
+                         (or (first (filter #(= "done" (:t %)) @!f))
+                             (when (< n 800) (Thread/sleep 10) (recur (inc n))))))
+                "the handshake gave up on its own instead of hanging forever")
+            (is (some #(= "err" (:t %)) @!f)
+                "the browser is told the connect failed")
+            (is (= 0 (count @(:!repl-sessions s)))
+                "the timed-out attempt left no entry behind"))))
+      (finally (future-cancel accepting) (.close ss)))))
+
 (deftest a-failed-connect-is-retried-not-cached
   (let [port (unused-port)]
     (with-server-nrepl-port port
@@ -282,3 +349,19 @@
         (is (map? s2) "the HTTP port was actually released, so a fresh server could bind it")
         (when (map? s2) (server/stop! s2))))
     (tap/reset-all!)))
+
+(deftest stopping-and-rebinding-the-same-explicit-port-succeeds
+  ;; stop! must not return before the port is actually released. Before
+  ;; the fix, hk/server-stop!'s returned promise was discarded, so this
+  ;; would intermittently throw BindException -- exactly the failure
+  ;; docs/repl.md promises "calling web! again" never causes.
+  (tap/reset-all!)
+  (pl/reset-all!)
+  (let [port (unused-port)
+        s1   (server/start! {:port port :nrepl-port nil :root "client/dist"})]
+    (is (= port (:port s1)))
+    (server/stop! s1)
+    (let [s2 (server/start! {:port port :nrepl-port nil :root "client/dist"})]
+      (is (= port (:port s2)) "the same fixed port bound again immediately after stop!")
+      (server/stop! s2)))
+  (tap/reset-all!))

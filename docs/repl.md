@@ -75,6 +75,12 @@ one so parallel test runs don't collide). Calling `web!` again replaces
 the running server rather than piling up a second one; `(web-off!)` stops
 it and is a no-op if nothing is running.
 
+`:ip` picks the interface to bind and defaults to `"127.0.0.1"`; pass
+`:ip "0.0.0.0"` (or a specific LAN address) only if you deliberately want
+this reachable off the local machine, since `/repl` is an unauthenticated
+bridge into this process's nREPL and binding a real interface hands
+arbitrary code execution to anyone who can reach it.
+
 **The browser client itself is not built yet** — that's a separate plan.
 Today, opening the returned URL in a browser 404s: `web!` stands up the
 server side (HTTP, `/hud`, `/repl`, the nREPL bridge) with nothing yet

@@ -85,6 +85,11 @@ are only reachable by something that speaks the wire protocol directly.
 The web view carries dependencies (http-kit, cheshire, nREPL); mu's core
 does not, which is why it lives behind the `:web` alias.
 
+`web!` binds `127.0.0.1` by default; pass `:ip "0.0.0.0"` (or a LAN
+address) only if you deliberately want a remote audience view, since it
+also exposes this process's nREPL — arbitrary code execution — to
+anyone who can reach that interface.
+
 ## Notation
 
 `notes` is a macro, so bare symbols are never resolved as vars. A symbol's

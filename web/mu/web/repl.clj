@@ -16,13 +16,25 @@
   point of the live-coding model, not a leak to guard against."
   (:require [nrepl.core :as nrepl]))
 
+(def ^:private HANDSHAKE-TIMEOUT-MS
+  "Bound on the initial new-session handshake only.
+
+  A closed port fails instantly (ECONNREFUSED) regardless of this value.
+  The case this guards is a port that is open but not actually nREPL --
+  easy to hit by mistyping :nrepl-port next to the web port in the same
+  docs -- which accepts the connection and then never sends anything
+  back. With Long/MAX_VALUE that blocks whatever thread called connect!
+  forever. Eval streams below keep the unbounded timeout: a bounded one
+  there would truncate a long-running eval instead."
+  5000)
+
 (defn connect!
   "Open a connection and allocate a session on it."
   [{:keys [port host] :or {host "127.0.0.1"}}]
   (let [conn (nrepl/connect :host host :port port)]
     (try
-      (let [client (nrepl/client conn Long/MAX_VALUE)
-            sess   (nrepl/new-session client)]
+      (let [sess   (nrepl/new-session (nrepl/client conn HANDSHAKE-TIMEOUT-MS))
+            client (nrepl/client conn Long/MAX_VALUE)]
         {:conn conn :client client :session sess})
       (catch Throwable t
         (.close ^java.io.Closeable conn)

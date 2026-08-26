@@ -40,19 +40,27 @@
   On success the events are cached as that voice's last good cycle and any
   recorded error is cleared. On failure the error is reported to the REPL,
   recorded for the HUD, and the cached cycle is replayed, so a typo costs
-  you the edit -- not the performance."
-  [k cycle-n]
-  (let [v (get (current-voices) k)]
-    (try
-      (let [evs (doall (p/query (:pattern v) [cycle-n (inc cycle-n)]))]
-        (swap! !last-good assoc k evs)
-        (swap! !errors dissoc k)
-        evs)
-      (catch Throwable t
-        (println (str "mu: voice " k " threw (" (.getMessage t)
-                      ") -- replaying last good cycle"))
-        (swap! !errors assoc k (str (.getMessage t)))
-        (get @!last-good k [])))))
+  you the edit -- not the performance.
+
+  Two arities: `(safe-render k cycle-n)` looks the voice up itself, for
+  callers (tests, a REPL) that only have the key. `(safe-render k v
+  cycle-n)` takes the voice map directly and is the shape
+  `mu.clock/start!`'s `:render-voice` seam calls -- `mu.player/begin!`
+  passes this function there directly, so a throwing pattern is caught
+  and replayed on the real render thread, not just in a test that calls
+  this function by hand."
+  ([k cycle-n] (safe-render k (get (current-voices) k) cycle-n))
+  ([k v cycle-n]
+   (try
+     (let [evs (doall (p/query (:pattern v) [cycle-n (inc cycle-n)]))]
+       (swap! !last-good assoc k evs)
+       (swap! !errors dissoc k)
+       evs)
+     (catch Throwable t
+       (println (str "mu: voice " k " threw (" (.getMessage t)
+                     ") -- replaying last good cycle"))
+       (swap! !errors assoc k (str (.getMessage t)))
+       (get @!last-good k [])))))
 
 (defn play!
   "Register a voice. Prefer passing a VAR (#'bass) so redefinition lands
@@ -100,6 +108,7 @@
    (let [sink (midi/open-sink! port)]
      (reset! !transport (clk/start! {:sink sink
                                      :voices-fn current-voices
+                                     :render-voice safe-render
                                      :bpm bpm}))
      :playing)))
 

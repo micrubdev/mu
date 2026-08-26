@@ -1,3 +1,8 @@
 .cpcache/
 target/
 .nrepl-port
+
+# Built client assets -- web!'s default :root, kept present but empty so
+# a fresh clone has a valid directory to serve from.
+client/dist/*
+!client/dist/.gitkeep

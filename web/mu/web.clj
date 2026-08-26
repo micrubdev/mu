@@ -13,11 +13,22 @@
   :nrepl-port must be the port THIS process's nREPL is listening on --
   under `clojure -M:live` that is printed at startup, or read from
   .nrepl-port. Without it the editor pane is read-only and /repl returns
-  503; the HUD still works."
+  503; the HUD still works.
+
+  :ip binds a network interface other than localhost, exposing this
+  process's nREPL (arbitrary code execution) to anyone who can reach it --
+  pass it only for a trusted network and only deliberately. Defaults to
+  127.0.0.1."
   ([] (web! {}))
-  ([{:keys [port nrepl-port root] :or {port 7890 root "client/dist"}}]
-   (when-let [s @!server] (server/stop! s))
-   (let [s (server/start! {:port port :nrepl-port nrepl-port :root root})]
+  ([{:keys [port nrepl-port root ip] :or {port 7890 root "client/dist"}}]
+   (when-let [s @!server]
+     ;; Clear the handle before stopping: if start! below throws (a busy
+     ;; port), a stale reference to the just-stopped server must not
+     ;; linger here for the next call to try to stop again.
+     (reset! !server nil)
+     (server/stop! s))
+   (let [s (server/start! (cond-> {:port port :nrepl-port nrepl-port :root root}
+                             ip (assoc :ip ip)))]
      (reset! !server s)
      (str "http://localhost:" (:port s)))))
 

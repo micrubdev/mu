@@ -1,5 +1,5 @@
 (ns mu.web.repl-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is]]
             [mu.web.repl :as repl]
             [nrepl.server :as nrepl-server]))
 

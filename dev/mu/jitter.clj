@@ -59,7 +59,10 @@
                "  FAIL -- p99 over budget. Check ZGC is on; then see spec section 8."))))
 
 (defn -main-tapped [& _]
-  (let [tp (mu.tap/subscribe!)
-        drain (doto (Thread. #(while true (mu.tap/poll! tp 100)))
-                (.setDaemon true) (.start))]
-    (-main)))
+  (let [tp (mu.tap/subscribe!)]
+    (doto (Thread. #(while true (mu.tap/poll! tp 100)))
+      (.setDaemon true)
+      (.start))
+    (try
+      (-main)
+      (finally (mu.tap/unsubscribe! tp)))))

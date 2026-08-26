@@ -54,7 +54,7 @@
                   (catch Throwable _ nil))]
     (apply v args)
     (println "mu: the web view needs the :web alias. Start with"
-             "`clojure -M:web -m nrepl.cmdline --interactive`.")))
+             "`clojure -M:web`.")))
 
 (defn web-off! []
   (when-let [v (try (requiring-resolve 'mu.web/web-off!)

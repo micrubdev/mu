@@ -56,7 +56,10 @@
     (when (= "ping" (:t m))
       ;; Take nanoTime as late as possible: the closer to the write, the
       ;; smaller the asymmetry the client's min-RTT estimator has to eat.
-      (hk/send! ch (proto/encode (proto/pong-msg (:id m) (:c m) (System/nanoTime)))))))
+      ;; Guarded the same as /repl's send: a closed channel is a normal
+      ;; race, not a bug worth surfacing.
+      (try (hk/send! ch (proto/encode (proto/pong-msg (:id m) (:c m) (System/nanoTime))))
+           (catch Throwable _ nil)))))
 
 (defn- hud-handler [!hud-clients req]
   (hk/as-channel req
@@ -86,7 +89,15 @@
   (let [d (-> (swap! !repl-sessions update ch #(or % (delay (repl/connect! {:port nrepl-port}))))
               (get ch))]
     (try
-      @d
+      (let [s @d]
+        ;; The channel closed while this connect was still in flight:
+        ;; :on-close saw `realized?` false and skipped the close, but
+        ;; dissoc'd anyway, so nothing else holds this session. Close it
+        ;; here instead of leaking a socket and a session thread for the
+        ;; life of the process.
+        (when-not (identical? (get @!repl-sessions ch) d)
+          (try (repl/close! s) (catch Throwable _ nil)))
+        s)
       (catch Throwable t
         (swap! !repl-sessions (fn [m] (if (identical? (get m ch) d) (dissoc m ch) m)))
         (throw t)))))
@@ -94,22 +105,33 @@
 (defn- on-repl-frame [!repl-sessions nrepl-port ch raw]
   (when-let [{:keys [t id code ns prefix]} (proto/decode raw)]
     (let [send (fn [f] (try (hk/send! ch (proto/encode f)) (catch Throwable _ nil)))]
-      (try
-        (let [sess (get-session! !repl-sessions nrepl-port ch)]
-          (case t
-            "eval"      (repl/eval! sess id code ns send)
-            "complete"  (repl/op! sess id {:op "completions" :prefix prefix :ns (or ns "user")} send)
-            "info"      (repl/op! sess id {:op "lookup" :sym prefix :ns (or ns "user")} send)
-            "interrupt" (repl/op! sess id {:op "interrupt"} send)
-            nil))
-        (catch Throwable e
-          ;; The nREPL this tab bridges to could not be reached (or the
-          ;; session otherwise failed to open). Answer the browser the way
-          ;; every other failure path does -- err then done, carrying the
-          ;; request id -- rather than letting the exception unwind through
-          ;; http-kit's worker thread in silence.
-          (send {:t "err" :id id :s (str "repl bridge: " (.getMessage e))})
-          (send {:t "done" :id id}))))))
+      ;; get-session! can block on a real socket -- bounded now (see
+      ;; repl/connect!'s handshake timeout), but still not something an
+      ;; http-kit worker thread should sit on. http-kit's pool is small
+      ;; (4 threads by default), so run the whole dispatch, including the
+      ;; session lookup, on its own thread rather than tying up a worker
+      ;; for the length of a connect attempt. op! already does the same
+      ;; for the op itself; this just moves the lookup off-thread too.
+      (doto (Thread.
+              (fn []
+                (try
+                  (let [sess (get-session! !repl-sessions nrepl-port ch)]
+                    (case t
+                      "eval"      (repl/eval! sess id code ns send)
+                      "complete"  (repl/op! sess id {:op "completions" :prefix prefix :ns (or ns "user")} send)
+                      "info"      (repl/op! sess id {:op "lookup" :sym prefix :ns (or ns "user")} send)
+                      "interrupt" (repl/op! sess id {:op "interrupt"} send)
+                      nil))
+                  (catch Throwable e
+                    ;; The nREPL this tab bridges to could not be reached
+                    ;; (or the session otherwise failed to open). Answer
+                    ;; the browser the way every other failure path does
+                    ;; -- err then done, carrying the request id -- rather
+                    ;; than letting the exception unwind in silence.
+                    (send {:t "err" :id id :s (str "repl bridge: " (.getMessage e))})
+                    (send {:t "done" :id id})))))
+        (.setDaemon true)
+        (.start)))))
 
 (defn- close-session!
   "Close a session if it ever actually opened. Never throws: a poisoned or
@@ -123,9 +145,13 @@
 
 (defn- repl-handler [!repl-sessions nrepl-port req]
   (hk/as-channel req
-    {:on-close   (fn [ch _]
-                   (when-let [d (get @!repl-sessions ch)] (close-session! d))
-                   (swap! !repl-sessions dissoc ch))
+    {;; Read-and-remove atomically: whether http-kit serialises :on-close
+     ;; against :on-receive for one channel is unconfirmed, so a plain
+     ;; get-then-dissoc could act on a map already changed by a racing
+     ;; get-session!. swap-vals! makes the read and the removal one step.
+     :on-close   (fn [ch _]
+                   (let [[old _] (swap-vals! !repl-sessions dissoc ch)]
+                     (when-let [d (get old ch)] (close-session! d))))
      :on-receive (fn [ch raw] (on-repl-frame !repl-sessions nrepl-port ch raw))}))
 
 (def ^:private CONTENT-TYPES
@@ -140,15 +166,28 @@
    "map"  "application/json"})
 
 (defn- content-type [^String path]
-  (let [ext (subs path (inc (.lastIndexOf path ".")))]
+  ;; Lower-cased: an extension's case carries no meaning on the wire, but
+  ;; a bare .lastIndexOf lookup is case-sensitive, so "/App.JS" fell
+  ;; through to octet-stream -- the exact browser refusal this map exists
+  ;; to prevent.
+  (let [ext (-> (subs path (inc (.lastIndexOf path ".")))
+                (.toLowerCase))]
     (get CONTENT-TYPES ext "application/octet-stream")))
 
 (defn- static [root uri]
-  (let [uri  (if (= "/" uri) "/index.html" uri)
-        ;; Reject traversal before touching the filesystem.
-        safe (.replaceAll ^String uri "\\.\\." "")
-        f    (File. (str root safe))]
-    (if (.isFile f)
+  (let [uri      (if (= "/" uri) "/index.html" uri)
+        ;; Reject traversal before touching the filesystem. Kept as a
+        ;; first, cheap rejection, but not trusted alone -- http-kit's own
+        ;; client normalises ".." out of a URI before it ever reaches this
+        ;; code, so a test against this string alone can pass without the
+        ;; guard ever doing anything. The canonical-path containment check
+        ;; below is what actually matters against a raw request that
+        ;; skips URI normalisation.
+        safe     (.replaceAll ^String uri "\\.\\." "")
+        root-file (File. ^String root)
+        f        (File. (str root safe))]
+    (if (and (.isFile f)
+             (.startsWith (.getCanonicalPath f) (.getCanonicalPath root-file)))
       {:status 200
        :headers {"Content-Type" (content-type safe)}
        :body f}
@@ -168,24 +207,30 @@
 
   :port       HTTP/WebSocket port (0 picks a free one)
   :nrepl-port the port this process's own nREPL server is on
-  :root       directory of built client assets"
-  [{:keys [port nrepl-port root] :or {port 7890 root "client/dist"} :as opts}]
+  :root       directory of built client assets
+  :ip         interface to bind, default \"127.0.0.1\". This HTTP server
+              proxies straight into an unauthenticated nREPL eval bridge,
+              so binding it to a real interface (\"0.0.0.0\", a LAN address)
+              hands arbitrary code execution to anyone who can reach that
+              interface -- only pass one deliberately, for a trusted
+              network, with a performer who understands the risk."
+  [{:keys [port nrepl-port root ip] :or {port 7890 root "client/dist" ip "127.0.0.1"} :as opts}]
   (let [running?       (atom true)
         !hud-clients   (atom #{})
         !repl-sessions (atom {})
-        stop-fn (hk/run-server (router (assoc opts
-                                              :root root
-                                              :!hud-clients !hud-clients
-                                              :!repl-sessions !repl-sessions))
-                               {:port port :legacy-return-value? false})]
+        srv (hk/run-server (router (assoc opts
+                                          :root root
+                                          :!hud-clients !hud-clients
+                                          :!repl-sessions !repl-sessions))
+                           {:port port :ip ip :legacy-return-value? false})]
     (broadcaster running? !hud-clients)
     {:running?       running?
-     :stop-fn        stop-fn
-     :port           (hk/server-port stop-fn)
+     :srv            srv
+     :port           (hk/server-port srv)
      :!hud-clients   !hud-clients
      :!repl-sessions !repl-sessions}))
 
-(defn stop! [{:keys [running? stop-fn !hud-clients !repl-sessions]}]
+(defn stop! [{:keys [running? srv !hud-clients !repl-sessions]}]
   (reset! running? false)
   ;; close-session! never throws, so a poisoned or half-open session in the
   ;; map cannot abort this cleanup before the atoms are reset and the HTTP
@@ -193,5 +238,8 @@
   (doseq [[_ d] @!repl-sessions] (close-session! d))
   (reset! !repl-sessions {})
   (reset! !hud-clients #{})
-  (hk/server-stop! stop-fn)
+  ;; Wait for the port to actually be released -- discarding the promise
+  ;; here would let a caller (mu.web/web!) rebind the same fixed port
+  ;; before the old listener is gone, surfacing as a BindException mid-set.
+  @(hk/server-stop! srv {:timeout 1000})
   nil)

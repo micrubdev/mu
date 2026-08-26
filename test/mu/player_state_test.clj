@@ -1,5 +1,7 @@
 (ns mu.player-state-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [mu.clock :as clk]
+            [mu.midi :as m]
             [mu.notation :refer [notes]]
             [mu.pattern :as p]
             [mu.player :as pl]))
@@ -70,3 +72,33 @@
     (pl/reset-all!)
     (pl/play! :bad (notes c2))
     (is (nil? (get-in (pl/state) [:voices :bad :error])))))
+
+;; End-to-end: a throwing voice on a REAL running transport (real render
+;; and dispatch threads, not a direct render-cycle/safe-render call). This
+;; is the path the HUD actually depends on -- mu.clock reaches patterns
+;; through voice-messages, not through mu.player/safe-render, so unless
+;; the render seam is actually wired up, this fails even though the
+;; direct safe-render tests above pass.
+(deftest a-throwing-voice-on-a-real-transport-does-not-silence-the-set
+  (pl/play! :good (notes c4) {:chan 0})
+  (pl/play! :bad  boom       {:chan 0})
+  (let [sink  (m/recording-sink)
+        trans (clk/start! {:sink sink
+                           :voices-fn pl/current-voices
+                           :render-voice pl/safe-render
+                           :bpm 480})]   ; 4 cycles/sec -- fast, for a short test
+    (Thread/sleep 800)
+    (let [ons-before (count (filter #(= :note-on (:type (:spec %))) (m/log sink)))]
+      (testing "the transport kept producing cycles for the healthy voice"
+        (is (pos? ons-before) "expected the healthy voice to have sounded already"))
+      (testing "the error is visible in player/state"
+        (is (re-find #"boom" (get-in (pl/state) [:voices :bad :error]))))
+      (Thread/sleep 800)
+      (testing "cycles keep coming after the throw -- the render thread survived"
+        (is (< ons-before (count (filter #(= :note-on (:type (:spec %))) (m/log sink))))
+            "expected more notes from the healthy voice after the bad one threw"))
+      (testing "a recovered pattern clears the error on the next cycle"
+        (pl/play! :bad (notes d4) {:chan 0})
+        (Thread/sleep 500)
+        (is (nil? (get-in (pl/state) [:voices :bad :error])))))
+    (clk/stop! trans)))

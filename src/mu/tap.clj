@@ -14,7 +14,12 @@
   "Cycles buffered per observer. At one publish per cycle, 64 is several
   seconds of slack at any sane tempo -- long enough to ride out a GC
   pause or a slow socket write, short enough that a dead observer does
-  not hold megabytes of rendered events alive."
+  not hold megabytes of rendered events alive.
+
+  Retention scales with events per cycle, not just cycle count: a cycle
+  with many onsets holds more live objects per slot than a sparse one, so
+  a dense pattern makes each buffered cycle heavier even at the same
+  depth of 64."
   64)
 
 (defrecord Tap [^ArrayBlockingQueue q ^AtomicLong drops])
@@ -51,4 +56,15 @@
 
 (defn dropped [^Tap t] (.get ^AtomicLong (.-drops t)))
 
-(defn reset-all! [] (reset! !taps #{}) nil)
+(defn reset-all!
+  "Drop every subscriber without unsubscribing them.
+
+  A test hook, not a performance control: it does not close or drain
+  existing Tap instances, so a caller still holding one orphans it --
+  every subsequent publish! silently stops reaching it. Tests use this
+  between runs because nothing in a test holds a Tap across it; a
+  performer calling this mid-set would silently kill every live
+  broadcaster (the HUD included)."
+  []
+  (reset! !taps #{})
+  nil)
