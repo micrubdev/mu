@@ -1,0 +1,22 @@
+{
+  "name": "mu-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.35.0",
+    "@nextjournal/lang-clojure": "^1.0.0",
+    "@replit/codemirror-vim": "^6.2.0",
+    "js-synthesizer": "^1.10.0"
+  }
+}

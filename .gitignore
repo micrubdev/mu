@@ -6,3 +6,4 @@ target/
 # a fresh clone has a valid directory to serve from.
 client/dist/*
 !client/dist/.gitkeep
+client/node_modules
