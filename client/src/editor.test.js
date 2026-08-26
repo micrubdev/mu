@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { topLevelFormAt } from './editor.js'
+import { topLevelFormAt, findNamespace } from './editor.js'
 
 const src = `(ns jam)\n\n(def bass\n  (notes c2 eb2))\n\n(play! :bass #'bass)\n`
 
@@ -40,4 +40,38 @@ test('a comment containing a paren does not confuse the scan', () => {
   const s = `(def a 1) ; )))\n(def b 1)\n`
   const { from, to } = topLevelFormAt(s, s.indexOf('(def b'))
   expect(s.slice(from, to)).toBe('(def b 1)')
+})
+
+test('reader prefix #_ is included in the returned range', () => {
+  const s = `#_(def old-bass 99)\n(def b 1)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('old-bass'))
+  expect(s.slice(from, to)).toBe('#_(def old-bass 99)')
+})
+
+test('reader prefix # on set literal is included in the returned range', () => {
+  const s = `#{1 2 3}\n(def b 1)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('1'))
+  expect(s.slice(from, to)).toBe('#{1 2 3}')
+})
+
+test('a stray leading paren does not prevent a later flat form from being found', () => {
+  const s = `)\n(def b 1)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('(def'))
+  expect(s.slice(from, to)).toBe('(def b 1)')
+})
+
+test('a stray closing paren does not cause a nested subform to be returned as top-level', () => {
+  const s = `)\n(def bass\n  (notes c2 eb2))\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('notes'))
+  expect(s.slice(from, to)).toBe('(def bass\n  (notes c2 eb2))')
+})
+
+test('findNamespace ignores (ns ...) inside a comment', () => {
+  const s = `; (ns fake)\n(ns real)\n`
+  expect(findNamespace(s)).toBe('real')
+})
+
+test('findNamespace ignores (ns ...) inside a string', () => {
+  const s = `(def doc "(ns fake)")\n(ns real)\n`
+  expect(findNamespace(s)).toBe('real')
 })

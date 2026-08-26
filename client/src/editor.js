@@ -22,19 +22,51 @@ export function topLevelFormAt (text, pos) {
       continue
     }
     if (ch === '(' || ch === '[' || ch === '{') {
-      if (depth === 0) start = i
+      if (depth === 0) {
+        // Walk backwards over reader prefixes: #, _, ', `, ~, @, ^
+        let prefixStart = i
+        while (prefixStart > 0 && '#_\'`~@^'.includes(text[prefixStart - 1])) {
+          prefixStart--
+        }
+        start = prefixStart
+      }
       depth++
     } else if (ch === ')' || ch === ']' || ch === '}') {
-      depth--
-      if (depth === 0 && start !== null) {
-        if (pos >= start && pos <= i + 1) return { from: start, to: i + 1 }
-        start = null
+      if (depth > 0) {
+        depth--
+        if (depth === 0 && start !== null) {
+          if (pos >= start && pos <= i + 1) return { from: start, to: i + 1 }
+          start = null
+        }
       }
     }
     i++
   }
   return null
 }
+
+// Find the namespace declaration in text, reader-aware.
+// Returns the namespace name or 'jam' as default.
+export function findNamespace (text) {
+  const pattern = /\(ns\s+([\w.\-*+!?<>]+)/g
+  let match
+  while ((match = pattern.exec(text)) !== null) {
+    const idx = match.index
+    // Only accept if this (ns ...) is a top-level form
+    if (topLevelFormAt(text, idx)?.from === idx) {
+      return match[1]
+    }
+  }
+  return 'jam'
+}
+
+// Register vim actions once at module scope
+Vim.defineAction('muEvalTopLevel', (cm) => {
+  // Will be called with cm.cm6 bound to the view
+  // The actual evaluation happens in makeEditor
+  return true
+})
+Vim.mapCommand(',e', 'action', 'muEvalTopLevel', {}, { context: 'normal' })
 
 export function makeEditor (parent, { onEval, doc = '' }) {
   const evalTopLevel = view => {
@@ -45,9 +77,8 @@ export function makeEditor (parent, { onEval, doc = '' }) {
   }
   const evalBuffer = view => { onEval(view.state.doc.toString()); return true }
 
-  // ,e in normal mode, for hands that already live in vim.
+  // Update the vim action to use this view's evalTopLevel
   Vim.defineAction('muEvalTopLevel', (cm) => evalTopLevel(cm.cm6))
-  Vim.mapCommand(',e', 'action', 'muEvalTopLevel', {}, { context: 'normal' })
 
   const view = new EditorView({
     parent,
@@ -71,8 +102,7 @@ export function makeEditor (parent, { onEval, doc = '' }) {
     view,
     // The ns to eval in: whatever the buffer declares, else jam.
     currentNs () {
-      const m = view.state.doc.toString().match(/\(ns\s+([\w.\-*+!?<>]+)/)
-      return m ? m[1] : 'jam'
+      return findNamespace(view.state.doc.toString())
     }
   }
 }
