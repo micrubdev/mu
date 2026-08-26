@@ -47,5 +47,26 @@
 (deftest stopping-a-voice-clears-its-error
   (pl/play! :bad boom)
   (pl/safe-render :bad 0)
-  (pl/stop-voice! :bad)
-  (is (nil? (get-in (pl/state) [:voices :bad]))))
+  (is (some? (get-in (pl/state) [:voices :bad :error])))
+  (testing "stopping the voice clears the error from the registry"
+    (pl/stop-voice! :bad)
+    (pl/play! :bad (notes c2))
+    (is (nil? (get-in (pl/state) [:voices :bad :error])))))
+
+(deftest hush-clears-all-errors
+  (pl/play! :bad boom)
+  (pl/safe-render :bad 0)
+  (is (some? (get-in (pl/state) [:voices :bad :error])))
+  (testing "hush clears all errors"
+    (pl/hush)
+    (pl/play! :bad (notes c2))
+    (is (nil? (get-in (pl/state) [:voices :bad :error])))))
+
+(deftest reset-all-clears-all-errors
+  (pl/play! :bad boom)
+  (pl/safe-render :bad 0)
+  (is (some? (get-in (pl/state) [:voices :bad :error])))
+  (testing "reset-all! clears all errors and re-register to verify"
+    (pl/reset-all!)
+    (pl/play! :bad (notes c2))
+    (is (nil? (get-in (pl/state) [:voices :bad :error])))))
