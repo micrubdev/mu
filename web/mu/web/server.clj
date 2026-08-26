@@ -4,7 +4,13 @@
   One broadcaster thread drains the tap and writes to every connected
   HUD client. It exists so that a slow socket write happens here and not
   on the render thread; the tap between them drops rather than blocks,
-  which is what keeps a stalled browser from ever touching the clock."
+  which is what keeps a stalled browser from ever touching the clock.
+
+  All mutable state (`!hud-clients`, `!repl-sessions`, `running?`) is
+  created fresh in `start!` and closed over by that instance's handlers,
+  rather than held in module-level atoms -- two servers in one JVM (as
+  the test suite runs, back to back) must not cross-wire: stopping one
+  must never touch another's clients or sessions."
   (:require [mu.player :as player]
             [mu.tap :as tap]
             [mu.web.protocol :as proto]
@@ -12,25 +18,34 @@
             [org.httpkit.server :as hk])
   (:import [java.io File]))
 
-(defonce ^:private !hud-clients (atom #{}))
-(defonce ^:private !repl-sessions (atom {}))
-
-(defn- broadcast! [^String s]
+(defn- broadcast! [!hud-clients ^String s]
   (doseq [ch @!hud-clients]
+    ;; send! returns false on a closed channel rather than throwing (see
+    ;; the Channel protocol docstring); this catch is belt-and-braces
+    ;; insurance against any lower-level I/O exception, not a compensation
+    ;; for a documented throw.
     (try (hk/send! ch s)
          (catch Throwable _ (swap! !hud-clients disj ch)))))
 
 (defn- broadcaster
-  "Drain the tap, encode, broadcast. One thread, never on the clock's path."
-  [running?]
+  "Drain the tap, encode, broadcast. One thread, never on the clock's path.
+
+  Each iteration is individually guarded: a bad cycle (a broken encode, a
+  `player/state` throw) must cost one broadcast, not the rest of the
+  process's HUD feed -- this thread's whole job is to survive whatever the
+  web side throws at it."
+  [running? !hud-clients]
   (let [t (tap/subscribe!)]
     (doto (Thread.
             (fn []
               (try
                 (while @running?
-                  (when-let [c (tap/poll! t 200)]
-                    (when (seq @!hud-clients)
-                      (broadcast! (proto/encode (proto/cycle-msg c (player/state)))))))
+                  (try
+                    (when-let [c (tap/poll! t 200)]
+                      (when (seq @!hud-clients)
+                        (broadcast! !hud-clients (proto/encode (proto/cycle-msg c (player/state))))))
+                    (catch Throwable e
+                      (println "mu.web.server: broadcaster iteration failed:" (.getMessage e)))))
                 (finally (tap/unsubscribe! t)))))
       (.setDaemon true)
       (.setName "mu-web-broadcaster")
@@ -43,18 +58,30 @@
       ;; smaller the asymmetry the client's min-RTT estimator has to eat.
       (hk/send! ch (proto/encode (proto/pong-msg (:id m) (:c m) (System/nanoTime)))))))
 
-(defn- hud-handler [req]
+(defn- hud-handler [!hud-clients req]
   (hk/as-channel req
     {:on-open    (fn [ch] (swap! !hud-clients conj ch))
      :on-close   (fn [ch _] (swap! !hud-clients disj ch))
      :on-receive (fn [ch raw] (on-hud-frame ch raw))}))
 
-(defn- on-repl-frame [nrepl-port ch raw]
-  (when-let [{:keys [t id code ns op prefix] :as m} (proto/decode raw)]
-    (let [sess (or (get @!repl-sessions ch)
-                   (let [s (repl/connect! {:port nrepl-port})]
-                     (swap! !repl-sessions assoc ch s)
-                     s))
+(defn- get-session!
+  "Get or lazily create the one nREPL session for this channel.
+
+  `swap!` retries under contention, so `repl/connect!` -- which opens a
+  real socket -- must never run as the body of the update fn; that would
+  open one connection per retry. A `delay` sidesteps this: constructing
+  one is side-effect free, so it is safe inside `swap!`, and no matter how
+  many `:on-receive` callbacks race here concurrently for the same
+  channel, only the winning delay is ever installed, and only that one is
+  ever dereffed -- so connect! runs exactly once per channel."
+  [!repl-sessions nrepl-port ch]
+  (-> (swap! !repl-sessions update ch #(or % (delay (repl/connect! {:port nrepl-port}))))
+      (get ch)
+      deref))
+
+(defn- on-repl-frame [!repl-sessions nrepl-port ch raw]
+  (when-let [{:keys [t id code ns prefix]} (proto/decode raw)]
+    (let [sess (get-session! !repl-sessions nrepl-port ch)
           send (fn [f] (try (hk/send! ch (proto/encode f)) (catch Throwable _ nil)))]
       (case t
         "eval"      (repl/eval! sess id code ns send)
@@ -63,12 +90,18 @@
         "interrupt" (repl/op! sess id {:op "interrupt"} send)
         nil))))
 
-(defn- repl-handler [nrepl-port req]
+(defn- repl-handler [!repl-sessions nrepl-port req]
   (hk/as-channel req
     {:on-close   (fn [ch _]
-                   (when-let [s (get @!repl-sessions ch)] (repl/close! s))
+                   ;; `realized?` matters: a channel that closes before its
+                   ;; first /repl frame never got a delay installed, or got
+                   ;; one that was never dereffed -- either way, dereffing
+                   ;; here would open a connection just to immediately
+                   ;; close it.
+                   (when-let [d (get @!repl-sessions ch)]
+                     (when (realized? d) (repl/close! @d)))
                    (swap! !repl-sessions dissoc ch))
-     :on-receive (fn [ch raw] (on-repl-frame nrepl-port ch raw))}))
+     :on-receive (fn [ch raw] (on-repl-frame !repl-sessions nrepl-port ch raw))}))
 
 (def ^:private CONTENT-TYPES
   ;; Browsers refuse to execute an ES module served as text/plain, so this
@@ -96,12 +129,12 @@
        :body f}
       {:status 404 :body "not found"})))
 
-(defn- router [{:keys [root nrepl-port]}]
+(defn- router [{:keys [root nrepl-port !hud-clients !repl-sessions]}]
   (fn [{:keys [uri] :as req}]
     (case uri
-      "/hud"  (hud-handler req)
+      "/hud"  (hud-handler !hud-clients req)
       "/repl" (if nrepl-port
-                (repl-handler nrepl-port req)
+                (repl-handler !repl-sessions nrepl-port req)
                 {:status 503 :body "no nrepl port configured"})
       (static root uri))))
 
@@ -112,15 +145,25 @@
   :nrepl-port the port this process's own nREPL server is on
   :root       directory of built client assets"
   [{:keys [port nrepl-port root] :or {port 7890 root "client/dist"} :as opts}]
-  (let [running? (atom true)
-        stop-fn  (hk/run-server (router (assoc opts :root root))
-                                {:port port :legacy-return-value? false})]
-    (broadcaster running?)
-    {:running? running? :stop-fn stop-fn :port (hk/server-port stop-fn)}))
+  (let [running?       (atom true)
+        !hud-clients   (atom #{})
+        !repl-sessions (atom {})
+        stop-fn (hk/run-server (router (assoc opts
+                                              :root root
+                                              :!hud-clients !hud-clients
+                                              :!repl-sessions !repl-sessions))
+                               {:port port :legacy-return-value? false})]
+    (broadcaster running? !hud-clients)
+    {:running?       running?
+     :stop-fn        stop-fn
+     :port           (hk/server-port stop-fn)
+     :!hud-clients   !hud-clients
+     :!repl-sessions !repl-sessions}))
 
-(defn stop! [{:keys [running? stop-fn]}]
+(defn stop! [{:keys [running? stop-fn !hud-clients !repl-sessions]}]
   (reset! running? false)
-  (doseq [[_ s] @!repl-sessions] (repl/close! s))
+  (doseq [[_ d] @!repl-sessions]
+    (when (realized? d) (repl/close! @d)))
   (reset! !repl-sessions {})
   (reset! !hud-clients #{})
   (hk/server-stop! stop-fn)

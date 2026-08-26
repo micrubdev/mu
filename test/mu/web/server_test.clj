@@ -6,6 +6,7 @@
             [mu.tap :as tap]
             [mu.web.protocol :as proto]
             [mu.web.server :as server]
+            [nrepl.server :as nrepl-server]
             [org.httpkit.client :as http])
   (:import [java.net URI]
            [java.net.http HttpClient WebSocket WebSocket$Listener]
@@ -22,6 +23,24 @@
   (pl/reset-all!)
   (let [s (server/start! {:port 0 :nrepl-port nil :root "client/dist"})]
     (try (f s) (finally (server/stop! s) (tap/reset-all!)))))
+
+(defn- with-nrepl
+  "Start a real in-process nREPL server, run f with its port, stop it."
+  [f]
+  (let [server (nrepl-server/start-server :port 0)]
+    (try (f (:port server))
+         (finally (nrepl-server/stop-server server)))))
+
+(defn- with-repl-server
+  "Start mu's web server wired to a real in-process nREPL so /repl has
+  something to bridge to, run f with the server map, then tear both down."
+  [f]
+  (tap/reset-all!)
+  (pl/reset-all!)
+  (with-nrepl
+    (fn [nrepl-port]
+      (let [s (server/start! {:port 0 :nrepl-port nrepl-port :root "client/dist"})]
+        (try (f s) (finally (server/stop! s) (tap/reset-all!)))))))
 
 (defn- ws-connect
   "Open a real WebSocket, collecting decoded frames into an atom. Returns
@@ -127,3 +146,65 @@
         (ws-send! ch (proto/encode {:t "ping" :id 1 :c 1.0}))
         (is (some? (wait-for !f #(= "pong" (:t %))))
             "the connection survived the garbage frame")))))
+
+;; /repl: bridges eval traffic to a real nREPL, one session per channel.
+
+(deftest a-repl-eval-returns-value-then-done-with-the-request-id
+  (with-repl-server
+    (fn [s]
+      (let [!f (atom [])
+            ch (ws-connect (:port s) "/repl" !f)]
+        (ws-send! ch (proto/encode {:t "eval" :id "r1" :code "(+ 1 1)" :ns "user"}))
+        (is (some? (wait-for !f #(= "done" (:t %)))))
+        (is (= "2" (->> @!f (filter #(= "value" (:t %))) first :s)))
+        (is (every? #(= "r1" (:id %)) @!f) "every frame carries the request id")))))
+
+(deftest two-repl-channels-get-two-distinct-sessions
+  ;; If both channels landed on the same nREPL session, channel a's *1
+  ;; would see whatever channel b evaluated last -- so this only passes
+  ;; when each channel's dynamic state (*1) is genuinely its own.
+  (with-repl-server
+    (fn [s]
+      (let [!fa (atom [])
+            !fb (atom [])
+            a   (ws-connect (:port s) "/repl" !fa)
+            b   (ws-connect (:port s) "/repl" !fb)]
+        (ws-send! a (proto/encode {:t "eval" :id "a1" :code "100" :ns "user"}))
+        (is (some? (wait-for !fa #(= "done" (:t %)))))
+        (ws-send! b (proto/encode {:t "eval" :id "b1" :code "200" :ns "user"}))
+        (is (some? (wait-for !fb #(= "done" (:t %)))))
+        (ws-send! a (proto/encode {:t "eval" :id "a2" :code "*1" :ns "user"}))
+        (is (some? (wait-for !fa #(and (= "done" (:t %)) (= "a2" (:id %))))))
+        (ws-send! b (proto/encode {:t "eval" :id "b2" :code "*1" :ns "user"}))
+        (is (some? (wait-for !fb #(and (= "done" (:t %)) (= "b2" (:id %))))))
+        (is (= "100" (->> @!fa (filter #(and (= "value" (:t %)) (= "a2" (:id %)))) first :s))
+            "channel a's *1 reflects only what a evaluated")
+        (is (= "200" (->> @!fb (filter #(and (= "value" (:t %)) (= "b2" (:id %)))) first :s))
+            "channel b's *1 reflects only what b evaluated")))))
+
+(deftest closing-a-repl-channel-closes-its-session
+  (with-repl-server
+    (fn [s]
+      (let [!f (atom [])
+            ch (ws-connect (:port s) "/repl" !f)]
+        (ws-send! ch (proto/encode {:t "eval" :id "c1" :code "1" :ns "user"}))
+        (is (some? (wait-for !f #(= "done" (:t %)))))
+        (is (= 1 (count @(:!repl-sessions s))) "the session was recorded")
+        (ws-close! ch)
+        (is (= 0
+               (loop [n 0]
+                 (let [c (count @(:!repl-sessions s))]
+                   (if (or (zero? c) (>= n 300))
+                     c
+                     (do (Thread/sleep 10) (recur (inc n)))))))
+            "the session entry is removed once the channel closes")))))
+
+(deftest a-repl-channel-that-never-sends-a-frame-leaves-no-session
+  (with-repl-server
+    (fn [s]
+      (let [!f (atom [])
+            ch (ws-connect (:port s) "/repl" !f)]
+        (ws-close! ch)
+        (Thread/sleep 200)
+        (is (= 0 (count @(:!repl-sessions s)))
+            "no nREPL session was ever created for a channel that only connected")))))
