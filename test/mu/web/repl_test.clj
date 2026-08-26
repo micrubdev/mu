@@ -64,14 +64,40 @@
                            (filter #(= "value" (:t %))) first :s)))
           (finally (repl/close! s)))))))
 
-(deftest two-sessions-do-not-share-state
+(deftest each-sessions-eval-history-is-its-own
+  ;; nREPL isolates dynamic bindings per session -- *1, *2, *3, *ns*, and
+  ;; the like -- so one tab's Emacs session doesn't stomp another tab's.
+  ;; It does not, and must not, isolate namespaces (see
+  ;; `a-def-in-one-session-is-visible-from-another` below).
   (with-nrepl
     (fn [port]
       (let [a (repl/connect! {:port port})
             b (repl/connect! {:port port})]
         (try
-          (collect a "u6" "(def only-in-a 1)" "user")
-          (let [frames (collect b "u7" "only-in-a" "user")]
-            (is (some #(= "ex" (:t %)) frames)
-                "the second session cannot see the first session's def"))
+          (collect a "u6" "100" "user")
+          (collect b "u7" "200" "user")
+          (is (= "100" (->> (collect a "u8" "*1" "user")
+                            (filter #(= "value" (:t %))) first :s))
+              "session a's *1 reflects only what a evaluated")
+          (is (= "200" (->> (collect b "u9" "*1" "user")
+                            (filter #(= "value" (:t %))) first :s))
+              "session b's *1 reflects only what b evaluated")
+          (finally (repl/close! a) (repl/close! b)))))))
+
+(deftest a-def-in-one-session-is-visible-from-another
+  ;; This is the property the live-coding model depends on: a `(def
+  ;; bass ...)` evaluated from one client (an editor buffer, another
+  ;; browser tab) must be visible to every other client attached to the
+  ;; same process, and to the render thread. Namespaces are global to
+  ;; the JVM; only dynamic bindings are per-session. Pinned here so this
+  ;; sharing doesn't get "fixed" away later.
+  (with-nrepl
+    (fn [port]
+      (let [a (repl/connect! {:port port})
+            b (repl/connect! {:port port})]
+        (try
+          (collect a "u10" "(def shared-across-sessions 99)" "user")
+          (is (= "99" (->> (collect b "u11" "shared-across-sessions" "user")
+                           (filter #(= "value" (:t %))) first :s))
+              "the second session can see the first session's def")
           (finally (repl/close! a) (repl/close! b)))))))
