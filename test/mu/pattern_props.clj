@@ -7,8 +7,19 @@
 
 ;; ---- generators -------------------------------------------------------
 
-(def gen-leaf
+(def gen-pure-leaf
   (gen/fmap p/pure (gen/elements [:a :b :c :d])))
+
+(def gen-lifted-leaf
+  "Raw scalars handed straight to a concatenation. This is the only safe
+  home for unlifted values: `fast` and `rev` do not lift, so a raw
+  keyword cannot be a bare leaf, but a concatenation of raw keywords is
+  a Pattern and is safe anywhere."
+  (gen/fmap #(apply p/fastcat %)
+            (gen/vector (gen/elements [:a :b :c :d]) 1 3)))
+
+(def gen-leaf
+  (gen/one-of [gen-pure-leaf gen-lifted-leaf]))
 
 (def gen-pattern
   (gen/recursive-gen
@@ -19,7 +30,12 @@
          (gen/fmap #(apply p/stack %)   (gen/vector inner 1 2))
          (gen/fmap (fn [[n q]] (p/fast n q))
                    (gen/tuple (gen/elements [1 2 3]) inner))
-         (gen/fmap p/rev inner)]))
+         (gen/fmap p/rev inner)
+         (gen/fmap (fn [[k n q]] (p/euclid k n q))
+                   (gen/tuple (gen/choose 0 5) (gen/choose 0 8) inner))
+         (gen/fmap (fn [[t q]] (p/off t p/rev q))
+                   (gen/tuple (gen/elements [1/4 1/3 1/2]) inner))
+         (gen/fmap #(p/superimpose p/rev %) inner)]))
     gen-leaf))
 
 (def gen-cycle (gen/choose -4 8))
