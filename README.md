@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 171 Clojure tests / 459 assertions, 0 failures
+- 180 Clojure tests / 484 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -187,7 +187,7 @@ a query span bisecting a note would retrigger it mid-sustain.
 cycle), `fastcat`/`sub` (all squeezed into one cycle).
 
 **Transforms** — `fast`, `slow`, `early`, `late`, `rev`, `every`, `off`,
-`superimpose`, `iter`, `stut`, `arp`, `euclid`, `euclid-full`, `degrade`,
+`superimpose`, `iter`, `stut`, `arp`, `euclid`, `euclid-full`, `lsys`, `degrade`,
 `degrade-by`, `sometimes`, `sometimes-by`. The linear time transforms live in
 `mu.pattern`; the rest in `mu.transform`.
 
@@ -273,6 +273,18 @@ and any lone event, passes through untouched.
 (euclid 3 8 1 (notes c2))            ; rotated left one step
 (euclid-full 3 8 (notes c2) (notes d2))   ; c2 on the x, d2 between
 ```
+
+`lsys` grows a Lindenmayer word and plays it across one cycle. A numeric
+symbol becomes a note, so it drops straight into `scale`:
+
+```clojure
+(def fib {0 [0 1], 1 [0]})
+(scale :dorian :d3 (lsys fib [0] 3))   ; => 50 52 50 50 52
+(slow 4 (lsys fib [0] 8))              ; longer words want stretching
+```
+
+A symbol with no rule is a constant and rewrites to itself. Expansion throws
+past 4096 symbols rather than wedging the render thread.
 
 `off`, `superimpose`, `iter` and `stut` all stack copies against the original:
 

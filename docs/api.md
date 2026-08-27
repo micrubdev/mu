@@ -22,6 +22,7 @@ the exclude. (`every?` is core; `every` is not.)
 - [Time](#time) — `fast`, `slow`, `early`, `late`, `rev`
 - [Structure](#structure) — `every`, `iter`, `off`, `superimpose`, `stut`
 - [Rhythm](#rhythm) — `euclid`, `euclid-full`
+- [Grammars](#grammars) — `lsys`
 - [Randomness](#randomness) — `degrade`, `sometimes`
 - [Signals](#signals) — `sine`, `saw`, `tri`, `rand`
 - [Values](#values) — `fmap`, `with`
@@ -200,6 +201,69 @@ shifts material between cycles.
 
 E(3,8) is the tresillo, E(5,8) the cinquillo. `k <= 0` or `n <= 0` is silence;
 `k >= n` fills every step.
+
+## Grammars
+
+### `lsys`
+
+```clojure
+(lsys rules axiom n)
+```
+
+A Lindenmayer system: rewrite `axiom` for `n` generations, then play the
+result across one cycle. `rules` maps a symbol to a vector of symbols; a
+symbol with **no** rule is a constant and rewrites to itself.
+
+```clojure
+(def fib {0 [0 1], 1 [0]})        ; the Fibonacci word
+
+(lsys fib [0] 0)   ;;=> (0)                          the axiom
+(lsys fib [0] 1)   ;;=> (0 1)
+(lsys fib [0] 2)   ;;=> (0 1 0)
+(lsys fib [0] 3)   ;;=> (0 1 0 0 1)
+(lsys fib [0] 4)   ;;=> (0 1 0 0 1 0 1 0)
+(lsys fib [0] 5)   ;;=> (0 1 0 0 1 0 1 0 0 1 0 0 1)
+```
+
+A numeric symbol becomes `{:note n}` — the same thing a bare number means
+inside `notes` — so an L-system over integers drops straight into `scale`:
+
+```clojure
+(scale :dorian :d3 (lsys fib [0] 3))
+;;=> (50 52 50 50 52)
+```
+
+Any other symbol is left as the raw value, so keyword alphabets work:
+
+```clojure
+(lsys {:a [:a :b] :b [:a]} [:a] 3)
+;;=> (:a :b :a :a :b)
+
+(lsys {:f [:f :+ :f :- :f :- :f :+ :f]} [:f] 1)
+;;=> (:f :+ :f :- :f :- :f :+ :f)     :+ and :- have no rule, so they persist
+```
+
+Everything lands in one cycle, as `sub` and `notes` do. Long words are meant
+to be stretched — generation 6 is 21 symbols, which `slow 4` unfolds six at a
+time:
+
+```clojure
+(slow 4 (lsys fib [0] 6))          ; 6 of the 21 in cycle 0
+```
+
+**Growth guard.** These expand exponentially, and rendering thousands of
+events in one cycle would wedge the render thread. Expansion throws past 4096
+symbols:
+
+```clojure
+(lsys fib [0] 17)
+;; mu: lsys reached 4181 symbols at generation 17, over the 4096 cap.
+;; Use fewer generations, or a rule that grows more slowly.
+```
+
+Safe mid-performance: `mu.player` isolates the throw to that voice, which
+replays its last good cycle. `n <= 0` is the axiom itself; an empty axiom is
+silence.
 
 ## Randomness
 
@@ -409,6 +473,7 @@ interface.
 | `hush` | `[]` |
 | `iter` | `[n p]` |
 | `late` | `[n p]` |
+| `lsys` | `[rules axiom n]` |
 | `mute` | `[k]` |
 | `note-name->midi` | `[sym]` |
 | `notes` | `[& body]` (macro) |

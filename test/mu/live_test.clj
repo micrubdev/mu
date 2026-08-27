@@ -54,3 +54,11 @@
       (is (= [50 53 57] (map (comp :note :value) evs)))
       (is (= [[0 1/3] [1/3 2/3] [2/3 1]] (map :whole evs))
           "one chord became three onsets in three slots"))))
+
+(deftest lsys-is-available-and-composes-with-scale
+  (testing "the Fibonacci word through dorian on d3"
+    (let [rules {0 [0 1], 1 [0]}
+          q     (scale :dorian :d3 (lsys rules [0] 3))
+          ns    (->> (query q [0 1]) (filter p/onset?)
+                     (sort-by (comp first :part)) (map (comp :note :value)))]
+      (is (= [50 52 50 50 52] ns)))))

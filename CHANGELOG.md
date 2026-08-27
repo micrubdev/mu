@@ -7,6 +7,14 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Grammars
+
+- `lsys` — Lindenmayer systems. Rules map a symbol to a vector of symbols; a
+  symbol with no rule is a constant. Numeric symbols become `{:note n}`, so an
+  L-system over integers composes directly with `scale`. Expansion throws past
+  4096 symbols rather than wedging the render thread on a cycle with thousands
+  of events.
+
 ### The arp batch
 
 - `arp` — spread a chord across the span it occupied. `:up`, `:down`,
