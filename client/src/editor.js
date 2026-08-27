@@ -29,9 +29,15 @@ export function topLevelFormAt (text, pos) {
           prefixStart--
         }
         // Delimiter guard: prefix run must be preceded by whitespace, bracket,
-        // or buffer start. Otherwise it's the tail of a preceding symbol.
+        // string-close, or buffer start. Otherwise it's the tail of a preceding symbol.
+        // A string literal is self-terminating in the reader: nothing can attach to its
+        // tail, so a prefix after a closing quote is unambiguously a fresh prefix.
+        // We do not attempt to recognize the end of a character literal (e.g. \a'(b))
+        // or a metadata form (e.g. ^{:a 1}(foo)), both of which fall back to returning
+        // the inner form — those would require backward token analysis, which has
+        // already over-corrected once on this function. This boundary is deliberate.
         const charBefore = prefixStart > 0 ? text[prefixStart - 1] : null
-        const isValidDelimiter = charBefore === null || /\s|[(){}\[\]]/.test(charBefore)
+        const isValidDelimiter = charBefore === null || /\s|[(){}\[\]"]/.test(charBefore)
         // If leftmost char of run is bare `_`, reject (only meaningful in `#_`)
         const runStart = text[prefixStart]
         const isBarePrefixUnderscore = runStart === '_' && !text.slice(prefixStart, i).includes('#')

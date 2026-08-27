@@ -93,3 +93,15 @@ test('a legitimately quoted form at line start keeps its quote', () => {
   const { from, to } = topLevelFormAt(s, s.indexOf('1 2 3'))
   expect(s.slice(from, to)).toBe("'(1 2 3)")
 })
+
+test('a prefixed form immediately after a string literal keeps its prefix', () => {
+  const s = `"foo"'(bar)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('bar'))
+  expect(s.slice(from, to)).toBe("'(bar)")
+})
+
+test('the bare-underscore guard rejects a lone underscore prefix', () => {
+  const s = `_(foo)\n`
+  const { from, to } = topLevelFormAt(s, s.indexOf('foo'))
+  expect(s.slice(from, to)).toBe('(foo)')
+})
