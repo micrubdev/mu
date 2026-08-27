@@ -11,7 +11,8 @@
   (:require [mu.harmony]
             [mu.notation]
             [mu.pattern]
-            [mu.player]))
+            [mu.player]
+            [mu.transform]))
 
 (defmacro ^:private import-vars
   "Re-export vars from other namespaces, preserving metadata -- crucially
@@ -34,10 +35,10 @@
   mu.pattern/cyc      mu.pattern/sub
   mu.pattern/fast     mu.pattern/slow
   mu.pattern/early    mu.pattern/late    mu.pattern/rev
-  mu.pattern/every    mu.pattern/degrade mu.pattern/degrade-by
-  mu.pattern/sometimes mu.pattern/sometimes-by
+  mu.transform/every  mu.transform/degrade mu.transform/degrade-by
+  mu.transform/sometimes mu.transform/sometimes-by
   mu.pattern/sine     mu.pattern/saw     mu.pattern/tri  mu.pattern/rand
-  mu.pattern/euclid   mu.pattern/off     mu.pattern/superimpose
+  mu.transform/euclid mu.transform/off   mu.transform/superimpose
   mu.pattern/fmap     mu.pattern/with
   ;; harmony
   mu.harmony/scale    mu.harmony/chord

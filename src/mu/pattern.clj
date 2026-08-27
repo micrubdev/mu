@@ -2,6 +2,11 @@
   "The pattern algebra. A Pattern is a pure function from a span to the
   events active within it.
 
+  This file is the algebra proper: the Pattern record, the query model,
+  the primitives, the linear time transforms, the signals and the
+  applicative. The vocabulary built on top of it -- `every`, `off`,
+  `euclid`, the degrade family and friends -- lives in `mu.transform`.
+
   Purity boundary: nothing here reads wall-clock time, touches MIDI, or
   holds mutable state. Everything is testable by calling `query`."
   (:refer-clojure :exclude [rand])
@@ -142,104 +147,19 @@
                     (query p [(refl e) (refl b)]))))
            (t/split-cycles sp)))))
 
-(defn every
-  "Apply f to the pattern on every nth cycle, starting at cycle 0."
-  [n f p]
-  (if (<= n 0)
-    p
-    (let [transformed (f p)]
-      (pat (fn [sp]
-             (mapcat (fn [[b e]]
-                       (let [c (t/floor-cycle b)]
-                         (query (if (zero? (mod c n)) transformed p) [b e])))
-                     (t/split-cycles sp)))))))
-
-(defn superimpose
-  "Stack f applied to the pattern against the untouched original."
-  [f p]
-  (stack p (f p)))
-
-(defn off
-  "Stack a copy shifted t cycles later, with f applied to that copy.
-
-  t is in cycles and rational, like every other time value here."
-  [t f p]
-  (stack p (f (late t p))))
-
-(defn- bjorklund
-  "Bjorklund's algorithm: distribute k onsets as evenly as possible over
-  n steps. Returns a vector of booleans.
-
-  Only ever called with 0 < k < n -- `euclid` handles the degenerate
-  cases before this point, which is also what guarantees progress:
-  both groups are non-empty, so m >= 1 and the remainder shrinks."
-  [k n]
-  (loop [a (repeat k [true])
-         b (repeat (- n k) [false])]
-    (if (< (count b) 2)
-      (vec (mapcat identity (concat a b)))
-      (let [m (min (count a) (count b))]
-        (recur (mapv into (take m a) (take m b))
-               (concat (drop m a) (drop m b)))))))
-
-(defn euclid
-  "Distribute k onsets as evenly as possible over n steps of one cycle,
-  playing p at each onset and resting otherwise.
-
-  E(3,8) is the tresillo `x..x..x.`; E(5,8) the cinquillo `x.xx.xx.`.
-  `rot` rotates the step vector left, and is taken mod n."
-  ([k n p] (euclid k n 0 p))
-  ([k n rot p]
-   (cond
-     (or (<= n 0) (<= k 0)) silence
-     (>= k n)               (fast n p)
-     :else
-     (let [steps (bjorklund k n)
-           r     (mod rot n)
-           steps (concat (drop r steps) (take r steps))]
-       (apply fastcat (map #(if % p silence) steps))))))
-
-(defn- time-rand
+(defn time-rand
   "Deterministic pseudo-random in [0,1) derived from a time value.
 
   A stateful PRNG would break the query model: the same span must give
   the same answer every time, and cycle 400 must be reachable without
-  having played cycles 0-399. This is a pure hash of time."
+  having played cycles 0-399. This is a pure hash of time.
+
+  Public because it is the shared seed for both the `rand` signal here
+  and the degrade family in `mu.transform`."
   ^double [x]
   (let [v (Math/sin (* (double x) 12345.6789))
         r (* v 43758.5453)]
     (- r (Math/floor r))))
-
-(defn degrade-by
-  "Randomly drop a proportion `amt` of events (0.0 keeps all, 1.0 drops all)."
-  [amt p]
-  (pat (fn [sp]
-         (filter #(>= (time-rand (first (:part %))) (double amt))
-                 (query p sp)))))
-
-(defn- undegrade-by
-  "Keep exactly the events that `degrade-by` with the same amt drops."
-  [amt p]
-  (pat (fn [sp]
-         (filter #(< (time-rand (first (:part %))) (double amt))
-                 (query p sp)))))
-
-(defn degrade
-  "Randomly drop about half the events."
-  [p]
-  (degrade-by 0.5 p))
-
-(defn sometimes-by
-  "Apply f to a proportion `amt` of events, leaving the rest untouched.
-  The two halves are complementary, so no event is lost or duplicated."
-  [amt f p]
-  (stack (degrade-by amt p)
-         (f (undegrade-by amt p))))
-
-(defn sometimes
-  "Apply f to about half the events."
-  [f p]
-  (sometimes-by 0.5 f p))
 
 (defn signal
   "A continuous pattern: f maps a time to a value in [0,1].

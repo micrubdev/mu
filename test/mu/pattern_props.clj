@@ -3,7 +3,8 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [mu.pattern :as p]))
+            [mu.pattern :as p]
+            [mu.transform :as x]))
 
 ;; ---- generators -------------------------------------------------------
 
@@ -31,11 +32,11 @@
          (gen/fmap (fn [[n q]] (p/fast n q))
                    (gen/tuple (gen/elements [1 2 3]) inner))
          (gen/fmap p/rev inner)
-         (gen/fmap (fn [[k n q]] (p/euclid k n q))
+         (gen/fmap (fn [[k n q]] (x/euclid k n q))
                    (gen/tuple (gen/choose 0 5) (gen/choose 0 8) inner))
-         (gen/fmap (fn [[t q]] (p/off t p/rev q))
+         (gen/fmap (fn [[t q]] (x/off t p/rev q))
                    (gen/tuple (gen/elements [1/4 1/3 1/2]) inner))
-         (gen/fmap #(p/superimpose p/rev %) inner)]))
+         (gen/fmap #(x/superimpose p/rev %) inner)]))
     gen-leaf))
 
 (def gen-cycle (gen/choose -4 8))
