@@ -136,13 +136,27 @@ function ping () {
 // clock's lowest-RTT selection.
 setInterval(() => { if (audio.state === 'running') ping() }, PING_INTERVAL_MS)
 
+// Latched, so the pane reports each TRANSITION once rather than each attempt.
+// socket.js retries on a backoff capped at RECONNECT_MAX_MS, so an unlatched
+// onClose writes a line every 4 s forever on the no-:nrepl-port path -- which
+// is precisely the path where the message is the only useful thing the pane
+// has to say, and where burying it under copies of itself is worst.
+// null = nothing reported yet, so the first event of either kind prints.
+let replUp = null
+
 const repl = connect(wsUrl('/repl'), {
   // web/mu/web/server.clj returns 503 for /repl when :nrepl-port is nil --
   // and web!'s own docstring documents calling it without :nrepl-port as
   // normal. Without these, that upgrade fails, socket.js reconnect-loops
   // silently, and Ctrl-Enter becomes a no-op with no visible cause.
-  onOpen () { appendOut('repl connected\n') },
-  onClose () { appendOut('repl disconnected — is :nrepl-port set?\n') },
+  onOpen () {
+    if (replUp !== true) appendOut('repl connected\n')
+    replUp = true
+  },
+  onClose () {
+    if (replUp !== false) appendOut('repl disconnected — is :nrepl-port set?\n')
+    replUp = false
+  },
   onMessage (m) {
     if (m.t === 'done') return
     appendOut((m.s ?? '') + (m.t === 'value' ? '\n' : ''))

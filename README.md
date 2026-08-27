@@ -355,8 +355,7 @@ native-output gate.
   (`OUTPUT_LATENCY_MS`, adjustable from the page); it makes the web view a
   remote-listening and audience view, not a same-room monitoring one.
 - **`web!` without `:nrepl-port`** serves the HUD but returns 503 on `/repl`,
-  and the page reports `repl disconnected` on every reconnect attempt (up to
-  once every 4 s) rather than once.
+  so evaluation is unavailable. The page reports this once, on the transition.
 
 ## Out of scope for v1
 
