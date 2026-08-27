@@ -1,7 +1,8 @@
 (ns mu.notation-test
   (:require [clojure.test :refer [deftest is testing]]
             [mu.pattern :as p]
-            [mu.notation :refer [notes note-name->midi]]))
+            [mu.pitch :as pitch]
+            [mu.notation :refer [notes note-name->midi note-name->spell]]))
 
 (defn- onset-values [pt cyc]
   (->> (p/query pt [cyc (inc cyc)])
@@ -29,28 +30,51 @@
     (is (nil? (note-name->midi 'h4)))))
 
 (deftest notes-builds-a-subdivided-pattern
-  (is (= [{:note 60} {:note 62}] (onset-values (notes c4 d4) 0)))
+  (is (= [60 62] (map :note (onset-values (notes c4 d4) 0))))
   (is (= [[0 1/2] [1/2 1]]
          (map :whole (sort-by (comp first :part)
                               (p/query (notes c4 d4) [0 1]))))))
 
 (deftest underscore-is-a-rest
-  (is (= [{:note 60}] (onset-values (notes c4 _) 0)))
+  (is (= [60] (map :note (onset-values (notes c4 _) 0))))
   (is (= 1 (count (p/query (notes c4 _) [0 1])))))
 
 (deftest vectors-subdivide
   (let [pt (notes c4 [d4 e4])]
-    (is (= [{:note 60} {:note 62} {:note 64}] (onset-values pt 0)))
+    (is (= [60 62 64] (map :note (onset-values pt 0))))
     (is (= [[0 1/2] [1/2 3/4] [3/4 1]]
            (map :whole (sort-by (comp first :part) (p/query pt [0 1])))))))
 
 (deftest raw-numbers-are-midi-notes
-  (is (= [{:note 36}] (onset-values (notes 36) 0))))
+  (testing "exact map: a raw number carries NO spelling to add"
+    (is (= [{:note 36}] (onset-values (notes 36) 0)))))
 
 (deftest lists-are-calls-whose-arguments-are-rewritten
   (testing "note literals work inside a call"
-    (is (= [{:note 70}] (onset-values (notes (p/cyc bb4 a4)) 0)))
-    (is (= [{:note 69}] (onset-values (notes (p/cyc bb4 a4)) 1))))
+    (is (= [70] (map :note (onset-values (notes (p/cyc bb4 a4)) 0))))
+    (is (= [69] (map :note (onset-values (notes (p/cyc bb4 a4)) 1)))))
   (testing "a non-note symbol inside a call still resolves as a var"
     (let [riff (notes c4 d4)]
-      (is (= [{:note 62} {:note 60}] (onset-values (notes (p/rev riff)) 0))))))
+      (is (= [62 60] (map :note (onset-values (notes (p/rev riff)) 0)))))))
+
+(deftest note-name-to-spell
+  (is (= {:step :e :alter -1 :octave 3} (note-name->spell 'ef3)))
+  (is (= {:step :e :alter -1 :octave 3} (note-name->spell 'eb3)) "b flattens too")
+  (is (= {:step :c :alter 1 :octave 4} (note-name->spell 'cs4)))
+  (is (= {:step :c :alter 1 :octave 4} (note-name->spell "c#4")))
+  (is (= {:step :c :alter 0 :octave -1} (note-name->spell 'c-1)))
+  (is (= {:step :b :alter 1 :octave 3} (note-name->spell 'bs3)))
+  (is (nil? (note-name->spell 'riff)) "not a note name"))
+
+(deftest literals-carry-the-spelling-they-were-written-with
+  (let [vals (fn [q] (map :value (p/query q [0 1])))]
+    (testing "e-flat is spelled e-flat, never d-sharp"
+      (is (= [{:note 51 :spell {:step :e :alter -1 :octave 3}}]
+             (vals (notes ef3)))))
+    (testing "a raw MIDI number carries no spelling"
+      (is (= [{:note 51}] (vals (notes 51)))))
+    (testing "the spelling always agrees with the note"
+      (doseq [q [(notes c4) (notes ef3) (notes cs4) (notes c-1) (notes bs3)]
+              v (vals q)]
+        (is (= (:note v) (pitch/spell->midi (:spell v)))
+            (str "disagreement in " (pr-str v)))))))

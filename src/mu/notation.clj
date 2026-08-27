@@ -13,20 +13,37 @@
 
 (def ^:private pitch-class {\c 0, \d 2, \e 4, \f 5, \g 7, \a 9, \b 11})
 
+(defn- accidentals
+  "Net semitone shift of an accidental string. `s`/`#` sharpen, `f`/`b`
+  flatten."
+  ^long [accs]
+  (reduce (fn [acc c]
+            (case c
+              (\s \#) (inc acc)
+              (\f \b) (dec acc)))
+          0
+          accs))
+
 (defn note-name->midi
   "MIDI number for a note-name symbol/string, or nil if it is not one.
   Middle C is c4 = 60. `s` and `#` sharpen; `f` and `b` flatten."
   [sym]
   (when-let [[_ letter accs octave] (re-matches note-re (name sym))]
-    (let [semis (reduce (fn [acc c]
-                          (case c
-                            (\s \#) (inc acc)
-                            (\f \b) (dec acc)))
-                        0
-                        accs)]
-      (+ (pitch-class (first letter))
-         semis
-         (* 12 (inc (Long/parseLong octave)))))))
+    (+ (pitch-class (first letter))
+       (accidentals accs)
+       (* 12 (inc (Long/parseLong octave))))))
+
+(defn note-name->spell
+  "How a note-name symbol/string/keyword is WRITTEN -- letter,
+  accidental, octave -- or nil if it is not a note name.
+
+  `(notes ef3)` has always known this and thrown it away. E-flat and
+  D-sharp are the same MIDI number and different music."
+  [sym]
+  (when-let [[_ letter accs octave] (re-matches note-re (name sym))]
+    {:step   (keyword letter)
+     :alter  (accidentals accs)
+     :octave (Long/parseLong octave)}))
 
 (defn- rewrite
   "Rewrite one form of notation source. Applied recursively."
@@ -34,7 +51,7 @@
   (cond
     (= form '_)    `p/silence
     (symbol? form) (if-let [m (note-name->midi form)]
-                     `(p/pure {:note ~m})
+                     `(p/pure {:note ~m :spell ~(note-name->spell form)})
                      form)
     (number? form) `(p/pure {:note ~form})
     (vector? form) `(p/sub ~@(map rewrite form))
