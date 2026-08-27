@@ -1,7 +1,9 @@
 (ns mu.harmony-test
   (:require [clojure.test :refer [deftest is testing]]
             [mu.harmony :as h]
-            [mu.pattern :as p]))
+            [mu.notation :as n]
+            [mu.pattern :as p]
+            [mu.pitch :as pitch]))
 
 (defn- degrees->notes
   "Run a sequence of integer degrees through a scale, in cycle order."
@@ -64,9 +66,11 @@
     (is (= [{:vel 0.5}]
            (map :value (p/query (h/scale :major :c4 (p/pure {:vel 0.5})) [0 1])))))
   (testing "sibling keys are preserved alongside the mapped note"
-    (is (= [{:note 64 :vel 0.5}]
-           (map :value (p/query (h/scale :major :c4 (p/pure {:note 2 :vel 0.5}))
-                                [0 1]))))))
+    (let [v (first (map :value (p/query (h/scale :major :c4 (p/pure {:note 2 :vel 0.5}))
+                                        [0 1])))]
+      (is (= 64 (:note v)))
+      (is (= 0.5 (:vel v)) "the sibling key survives")
+      (is (= {:step :e :alter 0 :octave 4} (:spell v)) "and the degree is spelled"))))
 
 (deftest scale-preserves-timing
   (let [src (p/sub (p/pure {:note 0}) (p/pure {:note 2}))
@@ -122,3 +126,54 @@
 (deftest chord-preserves-sibling-keys
   (is (= [{:note 0 :vel 0.5} {:note 2 :vel 0.5} {:note 4 :vel 0.5}]
          (map :value (p/query (h/chord 3 (p/pure {:note 0 :vel 0.5})) [0 1])))))
+
+(defn- spells [mode root ds]
+  (->> (apply p/sub (map #(p/pure {:note %}) ds))
+       (h/scale mode root)
+       (#(p/query % [0 1]))
+       (map (comp :spell :value))))
+
+(deftest scale-spells-heptatonic-degrees-by-letter
+  (testing "D dorian: degree 2 is an F, not an E-sharp"
+    (is (= [{:step :f :alter 0 :octave 3}] (spells :dorian :d3 [2]))))
+  (testing "degree 7 is the octave, one letter cycle up"
+    (is (= [{:step :d :alter 0 :octave 4}] (spells :dorian :d3 [7]))))
+  (testing "negative degrees wrap the letter and the octave down"
+    (is (= [{:step :b :alter 0 :octave 2}] (spells :dorian :d3 [-2]))))
+  (testing "a whole octave of C major is C D E F G A B C"
+    (is (= [:c :d :e :f :g :a :b :c] (map :step (spells :major :c4 (range 8))))))
+  (testing "E-flat major spells flats, not sharps"
+    (is (= [{:step :e :alter -1 :octave 3} {:step :f :alter 0 :octave 3}
+            {:step :g :alter 0 :octave 3} {:step :a :alter -1 :octave 3}]
+           (spells :major :ef3 [0 1 2 3])))))
+
+(deftest scale-spellings-always-agree-with-the-note
+  (doseq [mode [:major :minor :dorian :lydian :locrian :harmonic-minor :major-pent :minor-pent]
+          root [:c4 :ef3 :d3]]
+    (let [q (->> (apply p/sub (map #(p/pure {:note %}) (range -3 9)))
+                 (h/scale mode root))]
+      (doseq [{:keys [note spell]} (map :value (p/query q [0 1]))]
+        (when spell
+          (is (= note (pitch/spell->midi spell))
+              (str mode " " root " " note " " (pr-str spell))))))))
+
+(deftest pentatonics-inherit-their-parent-spelling
+  (testing "C minor pentatonic is C Eb F G Bb"
+    (is (= [:c :e :f :g :b] (map :step (spells :minor-pent :c4 (range 5)))))
+    (is (= [0 -1 0 0 -1] (map :alter (spells :minor-pent :c4 (range 5))))))
+  (testing "C major pentatonic is C D E G A"
+    (is (= [:c :d :e :g :a] (map :step (spells :major-pent :c4 (range 5)))))))
+
+(deftest some-modes-honestly-cannot-spell
+  (testing "chromatic has no canonical letter per degree"
+    (is (= [nil nil nil] (spells :chromatic :c4 [0 1 2]))))
+  (testing "blues likewise"
+    (is (every? nil? (spells :blues :c4 (range 6)))))
+  (testing "nor can a raw MIDI root, which has no letter"
+    (is (= [nil] (spells :major 60 [0])))))
+
+(deftest scale-drops-a-spelling-it-cannot-vouch-for
+  (testing "a spelling carried in from `notes` describes the DEGREE, not the pitch"
+    (let [q (h/scale :chromatic :c4 (n/notes c4))]
+      (is (nil? (:spell (:value (first (p/query q [0 1])))))
+          "the incoming c4 spelling must not survive as stale"))))

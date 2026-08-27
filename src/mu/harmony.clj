@@ -12,7 +12,8 @@
   time, touches MIDI, or holds mutable state."
   (:require [clojure.string :as str]
             [mu.notation :as n]
-            [mu.pattern :as p]))
+            [mu.pattern :as p]
+            [mu.pitch :as pitch]))
 
 (def modes
   "Interval sets, in semitones above the root."
@@ -69,6 +70,45 @@
         idx    (mod degree size)]
     (+ root (long (nth intervals idx)) (* 12 octave))))
 
+(def ^:private heptatonic
+  "Modes whose degrees map one-to-one onto letters. They are all
+  rotations of the major scale, so degree i is simply the root's letter
+  advanced i steps -- no per-mode letter table is needed."
+  #{:ionian :major :dorian :phrygian :lydian :mixolydian
+    :aeolian :minor :locrian :harmonic-minor :melodic-minor})
+
+(def ^:private pentatonic-parents
+  "Which degrees of the parent heptatonic scale a pentatonic picks out.
+  Spelling a pentatonic degree means spelling the parent degree."
+  {:major-pent [0 1 2 4 5]     ; of the major scale
+   :minor-pent [0 2 3 4 6]})   ; of the natural minor
+
+(defn- root->spell
+  "A note-name root can be spelled; a raw MIDI root has no letter."
+  [root]
+  (when-not (number? root) (n/note-name->spell root)))
+
+(defn- degree-spell
+  "How this degree is written, or nil when the mode has no canonical
+  letter for it -- `:blues` and `:chromatic`, or any mode under a raw
+  MIDI root. Guessing would print a wrong glyph, which is worse than
+  printing a plain one."
+  [mode root-spell degree midi]
+  (when root-spell
+    (cond
+      (heptatonic mode)
+      (pitch/advance root-spell degree midi)
+
+      (pentatonic-parents mode)
+      (let [par (pentatonic-parents mode)
+            n   (count par)]
+        (pitch/advance root-spell
+                       (+ (long (nth par (mod degree n)))
+                          (* 7 (Math/floorDiv (long degree) n)))
+                       midi))
+
+      :else nil)))
+
 (defn scale
   "Map integer scale degrees to MIDI notes.
 
@@ -79,14 +119,25 @@
 
     (scale :dorian :d3 (notes 0 2 4 [6 4]))
 
+  Adds :spell where the mode has a canonical letter per degree -- the
+  seven-note modes and the pentatonics. `:blues`, `:chromatic` and a raw
+  MIDI root spell nothing, and any incoming :spell is removed rather
+  than left stale: a spelling carried in from `notes` describes the
+  degree, not the pitch it becomes.
+
   Timing is never touched: this is a value map."
   [mode root p]
   (let [intervals (intervals-for mode)
-        r         (root->midi root)]
+        r         (root->midi root)
+        rs        (root->spell root)]
     (p/fmap (fn [v]
               (if (and (map? v) (contains? v :note))
-                (assoc v :note (degree->midi intervals r
-                                             (Math/round (double (:note v)))))
+                (let [d (Math/round (double (:note v)))
+                      m (degree->midi intervals r d)
+                      s (degree-spell mode rs d m)]
+                  (cond-> (assoc v :note m)
+                    s        (assoc :spell s)
+                    (nil? s) (dissoc :spell)))
                 v))
             p)))
 
