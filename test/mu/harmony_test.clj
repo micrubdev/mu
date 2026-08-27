@@ -73,3 +73,52 @@
         before (map (juxt :whole :part) (p/query src [0 1]))
         after  (map (juxt :whole :part) (p/query (h/scale :major :c4 src) [0 1]))]
     (is (= before after) "scale is a value map; it must not move anything")))
+
+(defn- chord-notes
+  "Degrees -> chords -> MIDI, in cycle order. Note the nesting: chord
+  runs INSIDE scale, on degrees."
+  [mode root size ds]
+  (->> (apply p/sub (map #(p/pure {:note %}) ds))
+       (h/chord size)
+       (h/scale mode root)
+       (#(p/query % [0 1]))
+       (map (comp :note :value))))
+
+(deftest chord-stacks-diatonic-degrees
+  (testing "a triad on degree 0 of C major is C E G"
+    (is (= [60 64 67] (chord-notes :major :c4 3 [0]))))
+  (testing "size 4 adds the seventh"
+    (is (= [60 64 67 71] (chord-notes :major :c4 4 [0]))))
+  (testing "size defaults to a triad"
+    (is (= (chord-notes :major :c4 3 [0])
+           (->> (p/pure {:note 0}) h/chord (h/scale :major :c4)
+                (#(p/query % [0 1])) (map (comp :note :value)))))))
+
+(deftest chord-quality-falls-out-of-the-mode
+  (testing "dorian degree 4 is minor: 3 and 7 semitones above its root"
+    (let [[a b c] (chord-notes :dorian :d3 3 [4])]
+      (is (= [3 7] [(- b a) (- c a)]))))
+  (testing "locrian degree 0 is diminished: 3 and 6"
+    (let [[a b c] (chord-notes :locrian :c4 3 [0])]
+      (is (= [3 6] [(- b a) (- c a)]))))
+  (testing "major degree 4 is major: 4 and 7"
+    (let [[a b c] (chord-notes :major :c4 3 [4])]
+      (is (= [4 7] [(- b a) (- c a)])))))
+
+(deftest chord-preserves-timing-exactly
+  (let [src (p/pure {:note 0})
+        ev  (first (p/query src [0 1]))
+        evs (p/query (h/chord 3 src) [0 1])]
+    (is (= 3 (count evs)))
+    (is (every? #(= (:whole ev) (:whole %)) evs) "same whole")
+    (is (every? #(= (:part ev) (:part %)) evs) "same part")
+    (is (every? p/onset? evs) "a chord is one onset, not several")))
+
+(deftest chord-leaves-non-note-values-alone
+  (is (= [0.5] (map :value (p/query (h/chord 3 (p/pure 0.5)) [0 1]))))
+  (is (= [{:vel 0.5}]
+         (map :value (p/query (h/chord 3 (p/pure {:vel 0.5})) [0 1])))))
+
+(deftest chord-preserves-sibling-keys
+  (is (= [{:note 0 :vel 0.5} {:note 2 :vel 0.5} {:note 4 :vel 0.5}]
+         (map :value (p/query (h/chord 3 (p/pure {:note 0 :vel 0.5})) [0 1])))))

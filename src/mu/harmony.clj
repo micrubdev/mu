@@ -89,3 +89,28 @@
                                              (Math/round (double (:note v)))))
                 v))
             p)))
+
+(defn chord
+  "Turn each scale degree into a `size`-note diatonic stack: degrees
+  d, d+2, d+4, ... Defaults to a triad.
+
+  Runs INSIDE `scale`, on degrees, before they become MIDI notes:
+
+    (scale :dorian :d3
+      (chord 3 (notes 0 3 4 3)))   ; correct quality per degree, free
+
+  Reversed, it would stack semitone offsets on absolute MIDI numbers
+  and produce nonsense.
+
+  Timing is untouched -- every note of the stack carries the source
+  event's :whole and :part, so a chord is one onset, not several.
+  Unlike `fmap` this maps one event to many, hence the mapcat."
+  ([p] (chord 3 p))
+  ([size p]
+   (p/pat (fn [sp]
+            (mapcat (fn [{:keys [value] :as ev}]
+                      (if (and (map? value) (contains? value :note))
+                        (for [i (range size)]
+                          (assoc ev :value (update value :note + (* 2 i))))
+                        [ev]))
+                    (p/query p sp))))))
