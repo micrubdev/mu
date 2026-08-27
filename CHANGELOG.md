@@ -9,6 +9,10 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ### Grammars
 
+- `mu.grammar` — a home for operators that MAKE a pattern from a rule,
+  rather than reshaping one you already have. `mu.transform` was at 295 lines
+  against the ~300 constraint; this is the seam cellular automata and pure
+  Markov walks would slot into.
 - `lsys` — Lindenmayer systems. Rules map a symbol to a vector of symbols; a
   symbol with no rule is a constant. Numeric symbols become `{:note n}`, so an
   L-system over integers composes directly with `scale`. Expansion throws past

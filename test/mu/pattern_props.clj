@@ -4,6 +4,7 @@
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
             [mu.pattern :as p]
+            [mu.grammar :as g]
             [mu.transform :as x]))
 
 ;; ---- generators -------------------------------------------------------
@@ -58,7 +59,7 @@
                    (gen/tuple (gen/choose 1 3) (gen/elements [1/4 1/3]) inner))
          ;; small generation counts only -- the point is that whatever
          ;; lsys produces obeys the laws, not that it produces a lot
-         (gen/fmap (fn [[n q]] (p/stack (x/lsys {0 [0 1] 1 [0]} [0] n) q))
+         (gen/fmap (fn [[n q]] (p/stack (g/lsys {0 [0 1] 1 [0]} [0] n) q))
                    (gen/tuple (gen/choose 0 4) inner))
          (gen/fmap (fn [[k n a b]] (x/euclid-full k n a b))
                    (gen/tuple (gen/choose 0 5) (gen/choose 0 8) inner inner))]))

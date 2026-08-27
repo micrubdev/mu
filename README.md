@@ -189,7 +189,7 @@ cycle), `fastcat`/`sub` (all squeezed into one cycle).
 **Transforms** — `fast`, `slow`, `early`, `late`, `rev`, `every`, `off`,
 `superimpose`, `iter`, `stut`, `arp`, `euclid`, `euclid-full`, `lsys`, `degrade`,
 `degrade-by`, `sometimes`, `sometimes-by`. The linear time transforms live in
-`mu.pattern`; the rest in `mu.transform`.
+`mu.pattern`; the rest in `mu.transform`, and `lsys` in `mu.grammar`.
 
 **Signals** — `sine`, `saw`, `tri`, `rand`. Continuous, `:whole nil`, so they
 never trigger on their own. Change rate with `fast`, not an argument.
@@ -322,15 +322,17 @@ One failing voice cannot affect its neighbours or the clock.
 
 ## Architecture
 
-Nine namespaces in a strict downward dependency chain. `mu.time`,
-`mu.pattern`, `mu.transform` and `mu.harmony` are pure and total, so the whole
-music algebra is testable with no clock, no device, and no threads.
+Ten namespaces in a strict downward dependency chain. `mu.time`,
+`mu.pattern`, `mu.transform`, `mu.grammar` and `mu.harmony` are pure and
+total, so the whole music algebra is testable with no clock, no device, and no
+threads.
 
 | File | Responsibility |
 |---|---|
 | `src/mu/time.clj` | rational cycle math, spans, cycle splitting |
 | `src/mu/pattern.clj` | the `Pattern` record and the query algebra |
 | `src/mu/transform.clj` | the derived vocabulary built on the algebra |
+| `src/mu/grammar.clj` | generative grammars: rules that grow a pattern |
 | `src/mu/harmony.clj` | modes, degrees to MIDI, diatonic stacks |
 | `src/mu/notation.clj` | the `notes` macro and note-literal grammar |
 | `src/mu/midi.clj` | `MidiSink` protocol, encoding, recording + javax sinks |
