@@ -7,6 +7,25 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### The arp batch
+
+- `arp` — spread a chord across the span it occupied. `:up`, `:down`,
+  `:updown`, `:downup`.
+- `iter` — rotate a further 1/n each cycle, home after n.
+- `stut` — n copies, fading by a feedback factor.
+- `euclid-full` — play a second pattern on the rests.
+
+`mu.pattern` was at 299 lines against the ~300 constraint, so the derived
+vocabulary (`every`, `off`, `superimpose`, `euclid`, the degrade family) moved
+to a new `mu.transform`. `mu.pattern` is now the algebra; `mu.transform` is
+what is built on it. `time-rand` became public as the shared seed. No
+behaviour change.
+
+Known: `late` and `early` do not re-split results at integer cycle boundaries,
+so a `late`-shifted event's `:part` is one piece when queried whole and two
+when queried per cycle. Onsets are unaffected. See the comment in
+`test/mu/pattern_props.clj`.
+
 ### Tier 1 vocabulary
 
 - `euclid` — k onsets over n steps, with optional rotation. E(3,8) is the

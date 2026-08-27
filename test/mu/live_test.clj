@@ -40,3 +40,17 @@
           evs  (filter p/onset? (query q [0 1]))]
       (is (= 9 (count evs)) "three onsets, three notes each")
       (is (= [50 53 57] (distinct (map (comp :note :value) evs)))))))
+
+(deftest arp-batch-is-available
+  (is (some? (arp :up (notes c4 e4))))
+  (is (some? (iter 4 (notes c4 d4))))
+  (is (some? (stut 3 0.6 1/16 (notes c2))))
+  (is (some? (euclid-full 3 8 (notes c2) (notes d2)))))
+
+(deftest arp-turns-a-chord-into-a-figure
+  (testing "the whole stack composes: chord -> arp -> scale"
+    (let [q   (scale :dorian :d3 (arp :up (chord 3 (notes 0))))
+          evs (->> (query q [0 1]) (filter p/onset?) (sort-by (comp first :part)))]
+      (is (= [50 53 57] (map (comp :note :value) evs)))
+      (is (= [[0 1/3] [1/3 2/3] [2/3 1]] (map :whole evs))
+          "one chord became three onsets in three slots"))))

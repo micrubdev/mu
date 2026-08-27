@@ -39,6 +39,8 @@
   mu.transform/sometimes mu.transform/sometimes-by
   mu.pattern/sine     mu.pattern/saw     mu.pattern/tri  mu.pattern/rand
   mu.transform/euclid mu.transform/off   mu.transform/superimpose
+  mu.transform/euclid-full  mu.transform/arp
+  mu.transform/iter   mu.transform/stut
   mu.pattern/fmap     mu.pattern/with
   ;; harmony
   mu.harmony/scale    mu.harmony/chord

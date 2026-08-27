@@ -168,3 +168,53 @@
                             (assoc (nth sorted idx) :whole slot :part part))))
                       idxs))))
               (group-by :whole notes))))))))
+
+(defn iter
+  "Rotate the pattern one nth of a cycle further on each successive
+  cycle, coming home after n cycles.
+
+    (iter 4 (notes c4 d4 e4 f4))
+    ;; cycle 0: c d e f   cycle 1: d e f c   cycle 2: e f c d ...
+
+  n <= 1 is the identity."
+  [n p]
+  (if (<= n 1)
+    p
+    (p/pat (fn [sp]
+             (mapcat (fn [[b e]]
+                       (let [c (t/floor-cycle b)]
+                         (p/query (p/early (/ (mod c n) n) p) [b e])))
+                     (t/split-cycles sp))))))
+
+(defn stut
+  "n copies of the pattern, each `t` cycles later than the last, with
+  :vel multiplied by `fb` each time.
+
+    (stut 3 0.6 1/16 (notes c2))   ; a triplet echo, fading
+
+  Copy 0 is the original. An event with no :vel is treated as 1.0, so
+  the echoes fade from full velocity. n <= 1 is the original alone."
+  [n fb t p]
+  (if (<= n 1)
+    p
+    (apply p/stack
+           (for [i (range n)]
+             (let [gain (Math/pow (double fb) i)]
+               (p/fmap (fn [v]
+                         (if (map? v)
+                           (assoc v :vel (* gain (double (:vel v 1.0))))
+                           v))
+                       (p/late (* i t) p)))))))
+
+(defn euclid-full
+  "Like `euclid`, but plays `q` on the rests instead of resting.
+
+    (euclid-full 3 8 kick snare)   ; kick on x..x..x., snare between
+
+  `k <= 0` is q on every step; `k >= n` is p on every step."
+  [k n p q]
+  (cond
+    (<= n 0)   p/silence
+    (<= k 0)   (p/fast n q)
+    (>= k n)   (p/fast n p)
+    :else      (apply p/fastcat (map #(if % p q) (bjorklund k n)))))

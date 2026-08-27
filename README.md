@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 157 Clojure tests / 420 assertions, 0 failures
+- 171 Clojure tests / 459 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -187,7 +187,9 @@ a query span bisecting a note would retrigger it mid-sustain.
 cycle), `fastcat`/`sub` (all squeezed into one cycle).
 
 **Transforms** — `fast`, `slow`, `early`, `late`, `rev`, `every`, `off`,
-`superimpose`, `euclid`, `degrade`, `degrade-by`, `sometimes`, `sometimes-by`.
+`superimpose`, `iter`, `stut`, `arp`, `euclid`, `euclid-full`, `degrade`,
+`degrade-by`, `sometimes`, `sometimes-by`. The linear time transforms live in
+`mu.pattern`; the rest in `mu.transform`.
 
 **Signals** — `sine`, `saw`, `tri`, `rand`. Continuous, `:whole nil`, so they
 never trigger on their own. Change rate with `fast`, not an argument.
@@ -253,19 +255,35 @@ Modes: the seven church modes (`:ionian`/`:major` through `:locrian`, with
 `:major-pent`, `:minor-pent`, `:blues`, `:chromatic`. An unknown mode throws,
 naming the ones that exist.
 
-`euclid` distributes k onsets over n steps — E(3,8) is the tresillo:
+`arp` spreads a chord across the slot it occupied, so one onset becomes n:
 
 ```clojure
-(euclid 3 8 (notes c2))       ; x..x..x.
-(euclid 3 8 1 (notes c2))     ; rotated left one step
+(scale :dorian :d3 (arp :up (chord 3 (notes 0 3 4 3))))
 ```
 
-`off` and `superimpose` stack a transformed copy against the original:
+Modes are `:up`, `:down`, `:updown`, `:downup`. The turning modes do not repeat
+the note they turn on — otherwise a triad limps. Anything without a `:note`,
+and any lone event, passes through untouched.
+
+`euclid` distributes k onsets over n steps — E(3,8) is the tresillo — and
+`euclid-full` fills the rests instead of resting:
+
+```clojure
+(euclid 3 8 (notes c2))              ; x..x..x.
+(euclid 3 8 1 (notes c2))            ; rotated left one step
+(euclid-full 3 8 (notes c2) (notes d2))   ; c2 on the x, d2 between
+```
+
+`off`, `superimpose`, `iter` and `stut` all stack copies against the original:
 
 ```clojure
 (off 1/8 (partial fast 2) riff)
 (superimpose rev riff)
+(iter 4 riff)              ; rotates 1/4 further each cycle, home after 4
+(stut 3 0.6 1/16 riff)     ; three copies, fading, 1/16 apart
 ```
+
+`stut` multiplies `:vel`, treating an absent one as `1.0`.
 
 ## The live-coding model
 
@@ -292,14 +310,16 @@ One failing voice cannot affect its neighbours or the clock.
 
 ## Architecture
 
-Seven namespaces in a strict downward dependency chain. `mu.time` and
-`mu.pattern` are pure and total, so the whole music algebra is testable with no
-clock, no device, and no threads.
+Nine namespaces in a strict downward dependency chain. `mu.time`,
+`mu.pattern`, `mu.transform` and `mu.harmony` are pure and total, so the whole
+music algebra is testable with no clock, no device, and no threads.
 
 | File | Responsibility |
 |---|---|
 | `src/mu/time.clj` | rational cycle math, spans, cycle splitting |
 | `src/mu/pattern.clj` | the `Pattern` record and the query algebra |
+| `src/mu/transform.clj` | the derived vocabulary built on the algebra |
+| `src/mu/harmony.clj` | modes, degrees to MIDI, diatonic stacks |
 | `src/mu/notation.clj` | the `notes` macro and note-literal grammar |
 | `src/mu/midi.clj` | `MidiSink` protocol, encoding, recording + javax sinks |
 | `src/mu/clock.clj` | pure cycle rendering; render + dispatch threads |

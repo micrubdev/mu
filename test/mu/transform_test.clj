@@ -144,3 +144,58 @@
 
 (deftest arp-rejects-unknown-modes
   (is (thrown? clojure.lang.ExceptionInfo (x/arp :sideways (triad)))))
+
+;; ---- iter --------------------------------------------------------------
+
+(deftest iter-rotates-a-quarter-further-each-cycle
+  (let [q (x/iter 4 (p/sub (p/pure :a) (p/pure :b) (p/pure :c) (p/pure :d)))]
+    (is (= [:a :b :c :d] (vals-at q 0)))
+    (is (= [:b :c :d :a] (vals-at q 1)))
+    (is (= [:c :d :a :b] (vals-at q 2)))
+    (is (= [:d :a :b :c] (vals-at q 3)))
+    (testing "and home again on cycle 4"
+      (is (= [:a :b :c :d] (vals-at q 4))))))
+
+(deftest iter-edges
+  (testing "n = 1 is the identity"
+    (let [src (p/sub (p/pure :a) (p/pure :b))]
+      (is (= (vals-at src 0) (vals-at (x/iter 1 src) 0)))
+      (is (= (vals-at src 1) (vals-at (x/iter 1 src) 1)))))
+  (testing "n <= 0 is the identity rather than a crash"
+    (let [src (p/sub (p/pure :a) (p/pure :b))]
+      (is (= (vals-at src 1) (vals-at (x/iter 0 src) 1)))
+      (is (= (vals-at src 1) (vals-at (x/iter -3 src) 1))))))
+
+;; ---- stut --------------------------------------------------------------
+
+(deftest stut-echoes-with-decaying-velocity
+  (let [q   (x/stut 3 0.5 1/8 (p/pure {:note 60 :vel 1.0}))
+        evs (->> (p/query q [0 1]) (filter p/onset?) (sort-by (comp first :part)))]
+    (is (= 3 (count evs)) "the original plus two echoes")
+    (testing "each copy is 1/8 later than the last"
+      (is (= [0 1/8 1/4] (map (comp first :whole) evs))))
+    (testing "velocity decays by the feedback factor"
+      (is (= [1.0 0.5 0.25] (map (comp :vel :value) evs))))))
+
+(deftest stut-treats-absent-velocity-as-full
+  (let [q   (x/stut 2 0.5 1/8 (p/pure {:note 60}))
+        evs (->> (p/query q [0 1]) (filter p/onset?) (sort-by (comp first :part)))]
+    (is (= [1.0 0.5] (map (comp :vel :value) evs)))))
+
+(deftest stut-edges
+  (testing "n <= 1 is the original alone"
+    (is (= 1 (count (filter p/onset? (p/query (x/stut 1 0.5 1/8 (p/pure {:note 60})) [0 1])))))
+    (is (= 1 (count (filter p/onset? (p/query (x/stut 0 0.5 1/8 (p/pure {:note 60})) [0 1])))))))
+
+;; ---- euclid-full -------------------------------------------------------
+
+(deftest euclid-full-plays-the-second-pattern-on-the-rests
+  (let [q (x/euclid-full 3 8 (p/pure :x) (p/pure :o))]
+    (is (= [:x :o :o :x :o :o :x :o] (vals-at q 0))
+        "E(3,8) is x..x..x. -- the rests are filled")))
+
+(deftest euclid-full-edges
+  (testing "no onsets means the second pattern everywhere"
+    (is (= [:o :o :o :o] (vals-at (x/euclid-full 0 4 (p/pure :x) (p/pure :o)) 0))))
+  (testing "k = n means the first pattern everywhere"
+    (is (= [:x :x :x :x] (vals-at (x/euclid-full 4 4 (p/pure :x) (p/pure :o)) 0)))))
