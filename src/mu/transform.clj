@@ -211,14 +211,23 @@
   [n fb t p]
   (if (<= n 1)
     p
-    (apply p/stack
-           (for [i (range n)]
-             (let [gain (Math/pow (double fb) i)]
-               (p/fmap (fn [v]
-                         (if (map? v)
-                           (assoc v :vel (* gain (double (:vel v 1.0))))
-                           v))
-                       (p/late (* i t) p)))))))
+    (let [layered (apply p/stack
+                         (for [i (range n)]
+                           (let [gain (Math/pow (double fb) i)]
+                             (p/fmap (fn [v]
+                                       (if (map? v)
+                                         (assoc v :vel (* gain (double (:vel v 1.0))))
+                                         v))
+                                     (p/late (* i t) p)))))]
+      ;; Anchor on the containing cycle, as `rev`, `every` and `arp` do.
+      ;; `late` is not span-canonical -- querying [0 2] gives one part
+      ;; [3/4 5/4] where querying [0 1] then [1 2] gives two -- so a
+      ;; stack of shifted copies inherits that. Querying a cycle at a
+      ;; time makes the result equal to the per-cycle decomposition by
+      ;; construction, whatever `late` does underneath. Onsets and
+      ;; wholes are identical either way; only the fragmenting differs.
+      (p/pat (fn [sp]
+               (mapcat #(p/query layered %) (t/split-cycles sp)))))))
 
 (defn euclid-full
   "Like `euclid`, but plays `q` on the rests instead of resting.

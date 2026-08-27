@@ -181,3 +181,8 @@
              (->> (p/query q [0 1])
                   (filter p/onset?)
                   (map (comp :vel :value))))))))
+
+(deftest splitting-never-duplicates-a-signal-sample
+  (testing "a continuous signal has no whole, so it must not be split"
+    (is (= 1 (count (p/query (p/fast 2 p/sine) [0 1]))))
+    (is (= 1 (count (p/query (p/late 1/4 p/saw) [0 2]))))))

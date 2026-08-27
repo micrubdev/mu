@@ -54,18 +54,8 @@
                    (gen/tuple (gen/elements [:up :down :updown :downup]) inner))
          (gen/fmap (fn [[n q]] (x/iter n q))
                    (gen/tuple (gen/choose 0 4) inner))
-         ;; `stut` is deliberately ABSENT here. It builds on `late`, and
-         ;; `late`/`early` do not re-split their results at integer cycle
-         ;; boundaries the way the rest of the algebra does: querying
-         ;; [0 2] yields one event with part [3/4 5/4], while querying
-         ;; [0 1] then [1 2] yields the same whole in two fragments. The
-         ;; onset is identical either way -- only the representation
-         ;; differs -- but `norm` compares :part, so the law fails.
-         ;; This predates `stut`: bare `late 1/4` and `off 1/4 identity`
-         ;; both fail it today. The generator has never contained either,
-         ;; which is why it went unnoticed. `stut` has example tests in
-         ;; mu.transform-test; canonicalising `late` is a separate,
-         ;; core-algebra decision.
+         (gen/fmap (fn [[n t q]] (x/stut n 0.5 t q))
+                   (gen/tuple (gen/choose 1 3) (gen/elements [1/4 1/3]) inner))
          (gen/fmap (fn [[k n a b]] (x/euclid-full k n a b))
                    (gen/tuple (gen/choose 0 5) (gen/choose 0 8) inner inner))]))
     gen-leaf))

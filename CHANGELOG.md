@@ -13,6 +13,7 @@ This project has not cut a numbered release yet; everything below is on `main`.
   `:updown`, `:downup`.
 - `iter` — rotate a further 1/n each cycle, home after n.
 - `stut` — n copies, fading by a feedback factor.
+- All four are under the seven laws in `test/mu/pattern_props.clj`.
 - `euclid-full` — play a second pattern on the rests.
 
 `mu.pattern` was at 299 lines against the ~300 constraint, so the derived
@@ -21,10 +22,17 @@ to a new `mu.transform`. `mu.pattern` is now the algebra; `mu.transform` is
 what is built on it. `time-rand` became public as the shared seed. No
 behaviour change.
 
-Known: `late` and `early` do not re-split results at integer cycle boundaries,
-so a `late`-shifted event's `:part` is one piece when queried whole and two
-when queried per cycle. Onsets are unaffected. See the comment in
-`test/mu/pattern_props.clj`.
+Known: `late` and `early` are not span-canonical -- a shifted event's `:part`
+is one piece when queried whole and two when queried per cycle. Onsets and
+wholes are identical either way, so nothing sounds different, and the clock
+only triggers onsets.
+
+This cannot be fixed inside `late`. Splitting its results, or splitting its
+incoming span, both satisfy the splitting law but break
+`early-is-the-inverse-of-late`: the second shift moves the first one's
+fragment boundaries off the integers, leaving two fragments of one whole
+inside a single cycle. Combinators built on `late` instead anchor on the
+containing cycle, as `rev` and `every` always have -- see `stut` and `arp`.
 
 ### Tier 1 vocabulary
 
