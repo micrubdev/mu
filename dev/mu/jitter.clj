@@ -66,7 +66,7 @@
   "Measure the configuration `mu.player/begin!` actually starts.
 
   The other entry points call `clk/start!` bare, which leaves the clock on
-  its `default-render-voice` -- so they measure a path no real session
+  its `mu.render/default-render-voice` -- so they measure a path no real session
   runs. `begin!` passes `:render-voice safe-render`, which adds a
   per-voice try/catch, a `doall` that forces the pattern eagerly, and two
   small `swap!`s per cycle on the thread the budget depends on. This is

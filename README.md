@@ -322,7 +322,7 @@ One failing voice cannot affect its neighbours or the clock.
 
 ## Architecture
 
-Ten namespaces in a strict downward dependency chain. `mu.time`,
+Eleven namespaces in a strict downward dependency chain. `mu.time`,
 `mu.pattern`, `mu.transform`, `mu.grammar` and `mu.harmony` are pure and
 total, so the whole music algebra is testable with no clock, no device, and no
 threads.
@@ -336,7 +336,8 @@ threads.
 | `src/mu/harmony.clj` | modes, degrees to MIDI, diatonic stacks |
 | `src/mu/notation.clj` | the `notes` macro and note-literal grammar |
 | `src/mu/midi.clj` | `MidiSink` protocol, encoding, recording + javax sinks |
-| `src/mu/clock.clj` | pure cycle rendering; render + dispatch threads |
+| `src/mu/render.clj` | pure cycle rendering: patterns in, a sorted schedule out |
+| `src/mu/clock.clj` | the two-thread transport wrapping it |
 | `src/mu/player.clj` | voice registry, var polling, per-voice error isolation |
 | `src/mu/live.clj` | performance namespace: re-exports |
 

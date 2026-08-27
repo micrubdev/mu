@@ -7,6 +7,15 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Namespace splits
+
+`mu.clock` was 329 lines against the ~300 constraint, so the pure half moved
+to `mu.render` along the seam the file already marked (`;; ---- transport`).
+`render-cycle` and friends are thread-free and testable with no transport;
+`mu.clock` is now just the two threads. `lsys` likewise moved to
+`mu.grammar`. No behaviour change: same 180 tests, and the shipped jitter
+benchmark measures p99 0.779 ms, inside the 1 ms budget.
+
 ### Grammars
 
 - `mu.grammar` — a home for operators that MAKE a pattern from a rule,

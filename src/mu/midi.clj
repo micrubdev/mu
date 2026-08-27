@@ -29,7 +29,7 @@
      the call site to an IFn$OOLO invocation that no protocol
      implementation can satisfy. To keep the no-allocation rule, the
      render thread pre-boxes the timestamps and dispatch passes the
-     boxed value straight through -- see mu.clock/render-cycle :ats.")
+     boxed value straight through -- see mu.render/render-cycle :ats.")
   (close-sink! [sink]
     "Release the device."))
 

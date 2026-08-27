@@ -1,105 +1,18 @@
 (ns mu.clock
-  "Cycle rendering and the two-thread transport.
+  "The two-thread transport.
 
-  `render-cycle` is pure and thread-free: all the scheduling logic is
-  testable without starting anything. The threads in Task 14 wrap it."
+  A render thread paces against the wall clock, calls
+  `mu.render/render-cycle` one cycle ahead and may allocate freely; a
+  dispatch thread at MAX_PRIORITY walks the resulting primitive arrays
+  and allocates nothing. One handoff per cycle over a bounded queue.
+
+  The rendering itself lives in `mu.render`, thread-free and testable
+  with no transport running."
   (:require [mu.midi :as midi]
-            [mu.pattern :as p]
+            [mu.render :as render]
             [mu.tap :as tap])
   (:import [java.util.concurrent ArrayBlockingQueue TimeUnit]
            [java.util.concurrent.locks LockSupport]))
-
-(defn- default-render-voice
-  "Query the pattern for the cycle directly, with no error handling.
-
-  This is the seam's default -- equivalent to what `voice-messages` did
-  before the seam existed. `mu.player/begin!` passes something sturdier
-  (`safe-render`); this is what plain `mu.clock/start!` gets when nobody
-  supplies one, e.g. from a REPL or a test that doesn't need voice-level
-  error recovery."
-  [_k {:keys [pattern]} cycle-n]
-  (p/query pattern [cycle-n (inc cycle-n)]))
-
-(defn- voice-messages
-  "Message specs for one voice over one cycle, as
-  [{:at-cycle rational :spec m}]. Note-offs may fall past cycle-end.
-
-  `render-voice` is the render seam: a `(fn [k v cycle-n] events)` that
-  stands in for querying the pattern directly. Keeping mu.clock generic
-  and dependency-free means it cannot reach for `mu.player/safe-render`
-  itself, so the caller (mu.player/begin!) injects it instead."
-  [render-voice cycle-n k {:keys [chan] :as v}]
-  (let [chan (or chan 0)]
-    (->> (render-voice k v cycle-n)
-         (filter p/onset?)
-         (mapcat
-           (fn [{:keys [whole value]}]
-             (let [note (:note value)
-                   vel  (get value :vel 0.8)
-                   ch   (get value :chan chan)]
-               (when note
-                 [{:at-cycle (first whole)
-                   :spec {:type :note-on :chan ch :note note :vel vel}}
-                  {:at-cycle (second whole)
-                   :spec {:type :note-off :chan ch :note note}}])))))))
-
-(defn render-cycle
-  "Render one cycle into flat, pre-sorted, pre-encoded arrays.
-
-  Runs on the render thread and may allocate freely. Returns
-  {:times ^longs :ats ^objects :msgs ^objects :specs ^objects :n long
-   :carry [...]} where `carry` is the note-offs landing after this cycle
-  ends -- they must be passed as `carry-in` to the next render or long
-  notes hang.
-
-  `:specs` holds the readable spec maps parallel to the encoded `:msgs`,
-  because an encoded device message is opaque and the caller still needs
-  to know what it was in order to track sounding notes.
-
-  `:ats` holds the same instants as `:times`, pre-boxed. `:times` is what
-  the dispatch loop compares against nanoTime; `:ats` is what it hands to
-  `midi/emit!`, whose protocol signature takes an Object. Boxing there
-  would allocate one Long per message on the thread that must not
-  allocate, so the boxing happens here instead.
-
-  `render-voice` is an optional per-voice render seam -- a
-  `(fn [k v cycle-n] events)` used in place of querying the pattern
-  directly, so a caller that wants a bad pattern to be caught and
-  replayed (see `mu.player/safe-render`) can inject that behaviour
-  without mu.clock knowing mu.player exists. Defaults to a plain,
-  unguarded query, which is what every caller got before the seam."
-  ([sink voices cycle-n cycle-start-nanos nanos-per-cycle carry-in]
-   (render-cycle sink voices cycle-n cycle-start-nanos nanos-per-cycle
-                  carry-in default-render-voice))
-  ([sink voices cycle-n cycle-start-nanos nanos-per-cycle carry-in render-voice]
-   (let [cycle-end (inc cycle-n)
-         produced  (mapcat (fn [[k v]] (voice-messages render-voice cycle-n k v)) voices)
-         all       (concat carry-in produced)
-         ;; A note-off exactly at the boundary belongs to this cycle;
-         ;; anything strictly past it is carried.
-         now-msgs  (filter #(<= (:at-cycle %) cycle-end) all)
-         later     (filter #(>  (:at-cycle %) cycle-end) all)
-         sorted    (sort-by :at-cycle now-msgs)
-         n         (count sorted)
-         times     (long-array n)
-         ats       (object-array n)
-         msgs      (object-array n)
-         specs     (object-array n)]
-     (dorun
-       (map-indexed
-         (fn [i {:keys [at-cycle spec]}]
-           ;; Times are relative to THIS cycle's start, not a global origin.
-           ;; That is what lets a tempo change re-anchor cleanly: the caller
-           ;; advances the anchor by the current cycle length.
-           (let [at (long (+ cycle-start-nanos
-                             (* (double (- at-cycle cycle-n))
-                                nanos-per-cycle)))]
-             (aset-long times i at)
-             (aset ats i at))
-           (aset specs i spec)
-           (aset msgs i (midi/encode sink spec)))
-         sorted))
-     {:times times :ats ats :msgs msgs :specs specs :n n :carry (vec later)})))
 
 ;; ---- transport --------------------------------------------------------
 
@@ -197,7 +110,7 @@
   here so a throwing pattern doesn't take the render thread down with it;
   mu.clock stays generic and doesn't know that function exists."
   [{:keys [sink voices-fn bpm render-voice]
-    :or   {bpm 120 render-voice default-render-voice}}]
+    :or   {bpm 120 render-voice render/default-render-voice}}]
   (let [running? (atom true)
         !bpm     (atom bpm)
         active   (boolean-array (* 16 128))
@@ -209,7 +122,7 @@
           (fn []
             ;; Warmup: render a silent cycle so the JIT has compiled
             ;; this path before the first audible note.
-            (render-cycle sink {} 0 t0 (bpm->nanos-per-cycle @!bpm) [] render-voice)
+            (render/render-cycle sink {} 0 t0 (bpm->nanos-per-cycle @!bpm) [] render-voice)
             (loop [cyc 0, anchor t0, carry []]
               (when @running?
                 (let [;; Re-read tempo every cycle. Because event times are
@@ -231,7 +144,7 @@
                                (catch Throwable t
                                  (println "mu: voices-fn threw:" (.getMessage t))
                                  {}))
-                      r   (render-cycle sink vs cyc anchor npc carry render-voice)
+                      r   (render/render-cycle sink vs cyc anchor npc carry render-voice)
                       n   (long (:n r))]
                   ;; Track from :specs, NOT :msgs. An encoded message is
                   ;; opaque, so reading :type off it would silently no-op for
@@ -290,30 +203,22 @@
   (silence-all! sink active))
 
 (def ^:private STOP-JOIN-MS
-  "How long `stop!` waits for each thread to notice `running?`.
-
-  Render exits within one hop of `wait-until!`; dispatch within its
-  200 ms queue poll. A second is generous for both, and bounded so a
-  wedged thread surfaces as a slow stop rather than a hung REPL."
+  "Bounded, so a wedged thread is a slow stop rather than a hung REPL.
+  Render exits within one hop of `wait-until!`, dispatch within its
+  200 ms queue poll."
   1000)
 
 (defn stop!
-  "Stop the transport, wait for its threads, and silence every sounding
-  note.
+  "Stop the transport, silence every sounding note, and wait for the
+  threads.
 
-  The join is not tidiness. `running?` is checked once per cycle, at the
-  top, so a render thread already inside the body finishes that cycle --
-  rendering, tracking, and calling `tap/publish!` -- after the flag goes
-  false. `mu.tap`'s subscriber set is global, so that stray frame lands
-  in whatever tap exists by then, which in a test run is the next
-  namespace's. Returning before the threads are gone means `stop!` does
-  not actually mean stopped.
-
-  Silencing happens BEFORE the join, not after. `active` is updated by
-  the render thread a full cycle ahead of dispatch emitting, so letting
-  render run one more cycle first clears the flag for a note whose
-  note-off dispatch never got to send -- the note would be left
-  sounding with nothing left to turn it off."
+  Both orderings are load-bearing. `running?` is read once per cycle, so
+  a render thread already inside the body finishes that cycle -- and
+  calls `tap/publish!` -- after the flag drops; without the join, that
+  stray frame reaches whatever tap exists by then. And silencing runs
+  BEFORE the join because `active` is cleared by the render thread a
+  cycle ahead of dispatch emitting: silence after, and a note whose
+  note-off never got sent is left sounding with nothing to stop it."
   [{:keys [running? sink active render dispatch] :as transport}]
   (reset! running? false)
   (silence-all! sink active)

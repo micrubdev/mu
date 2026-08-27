@@ -1,6 +1,7 @@
 (ns mu.clock-test
   (:require [clojure.test :refer [deftest is testing]]
             [mu.clock :as clk]
+            [mu.render :as render]
             [mu.midi :as m]
             [mu.notation :refer [notes]]
             [mu.pattern :as p]))
@@ -12,7 +13,7 @@
   Anchors the cycle at 0, so :at reads as an offset within the cycle."
   [voices cyc carry]
   (let [sink (m/recording-sink)
-        {:keys [times specs n]} (clk/render-cycle sink voices cyc 0 NPC carry)]
+        {:keys [times specs n]} (render/render-cycle sink voices cyc 0 NPC carry)]
     (mapv (fn [i] {:at (aget ^longs times i) :spec (aget ^objects specs i)})
           (range n))))
 
@@ -32,14 +33,14 @@
 (deftest times-are-relative-to-the-given-cycle-start
   (testing "the anchor is this cycle's own start, not a global origin"
     (let [sink (m/recording-sink)
-          {:keys [times n]} (clk/render-cycle
+          {:keys [times n]} (render/render-cycle
                               sink {:v {:pattern (notes c4) :chan 0}}
                               3 (* 3 NPC) NPC [])]
       (is (pos? n))
       (is (= (* 3 NPC) (aget ^longs times 0)))))
   (testing "the same cycle at a different anchor moves with it"
     (let [sink (m/recording-sink)
-          {:keys [times]} (clk/render-cycle
+          {:keys [times]} (render/render-cycle
                             sink {:v {:pattern (notes c4) :chan 0}}
                             3 999 NPC [])]
       (is (= 999 (aget ^longs times 0))
@@ -54,7 +55,7 @@
 (deftest note-offs-past-the-cycle-end-become-carry
   (testing "a note filling the whole cycle ends exactly at the boundary"
     (let [sink (m/recording-sink)
-          {:keys [carry n]} (clk/render-cycle
+          {:keys [carry n]} (render/render-cycle
                               sink {:v {:pattern (notes c4) :chan 0}}
                               0 0 NPC [])]
       (is (= 2 n) "note-off at the boundary still belongs to this cycle")
@@ -62,7 +63,7 @@
   (testing "a note stretched past the boundary carries its off forward"
     (let [sink  (m/recording-sink)
           long-note (p/slow 2 (notes c4))
-          {:keys [n carry]} (clk/render-cycle
+          {:keys [n carry]} (render/render-cycle
                               sink {:v {:pattern long-note :chan 0}}
                               0 0 NPC [])]
       (is (= 1 n) "only the note-on lands in this cycle")
@@ -87,7 +88,7 @@
   ;; to the emit! protocol method would box one Long per message. The
   ;; render thread pre-boxes them into :ats instead.
   (let [sink (m/recording-sink)
-        {:keys [times ats n]} (clk/render-cycle
+        {:keys [times ats n]} (render/render-cycle
                                 sink {:v {:pattern (notes c4 d4) :chan 0}}
                                 0 0 NPC [])]
     (is (pos? n))
