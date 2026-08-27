@@ -44,6 +44,16 @@
                :let  [c (t/floor-cycle b)]]
            {:whole [c (inc c)] :part [b e] :value v}))))
 
+(defn- lift
+  "Lift a non-Pattern value into a constant pattern.
+
+  The concatenations carry modulation values as often as notes, so a
+  bare scalar lifts with `pure` and NOT `(pure {:note v})` -- `with`
+  needs the raw value. `notes` is unaffected: its macro rewrites
+  numbers to `(pure {:note n})` before `sub` ever sees them."
+  [x]
+  (if (pattern? x) x (pure x)))
+
 (defn- with-time
   "Build a pattern that maps query times through `fwd` and result event
   times back through `back`. Every linear time transform is this."
@@ -63,14 +73,15 @@
     (with-time #(* % n) #(/ % n) p)))
 
 (defn stack
-  "Play patterns simultaneously."
+  "Play patterns simultaneously. Raw values are lifted with `pure`."
   [& ps]
-  (pat (fn [sp] (mapcat #(query % sp) ps))))
+  (let [ps (mapv lift ps)]
+    (pat (fn [sp] (mapcat #(query % sp) ps)))))
 
 (defn slowcat
   "Play one pattern per cycle, in rotation."
   [& ps]
-  (let [ps (vec ps)
+  (let [ps (mapv lift ps)
         n  (count ps)]
     (if (zero? n)
       silence

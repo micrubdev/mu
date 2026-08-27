@@ -177,3 +177,24 @@
     (is (= 4 (count out)))
     (is (apply < (map (comp :cut :value) out))
         "each note samples the rising signal at its own position")))
+
+(deftest concatenations-lift-scalars
+  (testing "sub lifts raw values, without wrapping them as notes"
+    (is (= [0.9 0.5] (map :value (p/query (p/sub 0.9 0.5) [0 1])))))
+  (testing "cyc lifts too, one per cycle"
+    (is (= [0.9] (map :value (p/query (p/cyc 0.9 0.5) [0 1]))))
+    (is (= [0.5] (map :value (p/query (p/cyc 0.9 0.5) [1 2])))))
+  (testing "stack lifts"
+    (is (= #{0.9 0.5} (set (map :value (p/query (p/stack 0.9 0.5) [0 1]))))))
+  (testing "patterns and scalars mix freely"
+    (is (= [0.9 0.5] (map :value (p/query (p/sub (p/pure 0.9) 0.5) [0 1]))))))
+
+(deftest lifting-serves-the-motivating-case
+  (testing "three velocities against four notes: phasing, onsets 0.9 0.9 0.5 0.7"
+    (let [four (p/sub (p/pure {:note 60}) (p/pure {:note 62})
+                      (p/pure {:note 64}) (p/pure {:note 65}))
+          q    (p/with four :vel (p/sub 0.9 0.5 0.7))]
+      (is (= [0.9 0.9 0.5 0.7]
+             (->> (p/query q [0 1])
+                  (filter p/onset?)
+                  (map (comp :vel :value))))))))
