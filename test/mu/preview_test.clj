@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [mu.notation :refer [notes]]
             [mu.pattern :as p]
-            [mu.preview :as pv]))
+            [mu.preview :as pv]
+            [mu.transform]))
 
 (defn- v [pattern] {:pattern pattern :chan 0})
 
@@ -53,3 +54,38 @@
             r    (pv/voice-preview [] many)]
         (is (= 512 (count (:notes r))))
         (is (true? (:truncated r)))))))
+
+(deftest tick-diffs-against-the-previous-tick
+  (pv/reset-baseline!)
+  (let [one {:bass (v (notes c4))}
+        two {:bass (v (notes c4 e4))}]
+    (testing "a brand new voice is all added"
+      (let [r (pv/tick! one 5)]
+        (is (= 6 (:n r)) "the preview is for the NEXT cycle")
+        (is (true? (get-in r [:voices :bass :changed])))
+        (is (= ["added"] (map :s (get-in r [:voices :bass :notes]))))))
+    (testing "an unchanged voice on the next tick reports no change"
+      (let [r (pv/tick! one 6)]
+        (is (false? (get-in r [:voices :bass :changed])))
+        (is (= ["same"] (map :s (get-in r [:voices :bass :notes]))))))
+    (testing "an edit between ticks shows up"
+      (let [r (pv/tick! two 7)]
+        (is (true? (get-in r [:voices :bass :changed])))
+        (is (some #{"added"} (map :s (get-in r [:voices :bass :notes]))))))))
+
+(deftest tick-cancels-per-cycle-variation
+  (pv/reset-baseline!)
+  (testing "a pattern that varies by cycle shows no diff when unedited"
+    (let [vs {:x (v (mu.transform/every 2 p/rev (notes c4 d4 e4)))}]
+      (pv/tick! vs 0)
+      (doseq [c [1 2 3]]
+        (is (false? (get-in (pv/tick! vs c) [:voices :x :changed]))
+            (str "cycle " c " should report no edit"))))))
+
+(deftest tick-survives-a-throwing-pattern
+  (pv/reset-baseline!)
+  (let [boom {:pattern (p/pat (fn [_] (throw (ex-info "boom" {})))) :chan 0}
+        r    (pv/tick! {:bad boom} 0)]
+    (is (= "boom" (get-in r [:voices :bad :error])))
+    (is (= [] (get-in r [:voices :bad :notes])))
+    (is (false? (get-in r [:voices :bad :changed])))))

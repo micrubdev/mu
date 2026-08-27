@@ -57,3 +57,48 @@
     (cond-> {:changed (not= was now)
              :notes   (vec (take MAX-NOTES notes))}
       (> (count notes) MAX-NOTES) (assoc :truncated true))))
+
+(defonce ^:private !baseline
+  ;; key -> the pattern value seen at the previous tick. The one piece of
+  ;; state here: it lives in this namespace because the baseline is part
+  ;; of what "changed" MEANS, not part of transporting it.
+  (atom {}))
+
+(defn reset-baseline! [] (reset! !baseline {}) nil)
+
+(defn- safe-notes
+  "notes-in, but a throwing pattern yields the message instead."
+  [voice cycle-n]
+  (try {:notes (notes-in voice cycle-n)}
+       (catch Throwable t {:error (or (.getMessage t) (str (class t)))})))
+
+(defn tick!
+  "One preview per rendered cycle, for the cycle AFTER `cycle-n`.
+
+  Diffs this tick's pattern values against the previous tick's. The
+  render thread is one cycle ahead, so cycle-n + 1 is the first cycle an
+  edit made now can still reach. Never throws."
+  [voices cycle-n]
+  (let [target (inc cycle-n)
+        base   @!baseline
+        out    (into {}
+                 (for [[k v] voices]
+                   [k (let [{:keys [notes error]} (safe-notes v target)]
+                        (if error
+                          {:error error :changed false :notes []}
+                          (let [prev (get base k)]
+                            (cond
+                              ;; fast path: the very same pattern object
+                              (identical? prev (:pattern v))
+                              (voice-preview notes notes)
+
+                              ;; new voice: everything is an addition
+                              (nil? prev)
+                              (voice-preview [] notes)
+
+                              :else
+                              (voice-preview (or (:notes (safe-notes (assoc v :pattern prev) target))
+                                                 [])
+                                             notes)))))]))]
+    (reset! !baseline (into {} (map (fn [[k v]] [k (:pattern v)])) voices))
+    {:n target :voices out}))
