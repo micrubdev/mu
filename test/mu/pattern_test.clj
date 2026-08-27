@@ -198,3 +198,22 @@
              (->> (p/query q [0 1])
                   (filter p/onset?)
                   (map (comp :vel :value))))))))
+
+(deftest superimpose-stacks-the-transformed-copy
+  (testing "the original survives alongside f applied to it"
+    (let [q (p/superimpose #(p/fast 2 %) (p/pure :a))]
+      (is (= 3 (count (p/query q [0 1])))
+          "one from the original, two from the doubled copy"))))
+
+(deftest off-shifts-the-copy-and-leaves-the-original
+  (testing "onsets at 0 (original) and 1/4 (the shifted copy)"
+    (let [q (p/off 1/4 identity (p/pure :a))]
+      (is (= [0 1/4]
+             (->> (p/query q [0 1])
+                  (filter p/onset?)
+                  (map (comp first :whole))
+                  sort)))))
+  (testing "f is applied to the copy, not the original"
+    (let [q (p/off 1/2 #(p/fmap (constantly :b) %) (p/pure :a))]
+      (is (= #{:a :b}
+             (set (map :value (filter p/onset? (p/query q [0 1])))))))))

@@ -154,6 +154,18 @@
                          (query (if (zero? (mod c n)) transformed p) [b e])))
                      (t/split-cycles sp)))))))
 
+(defn superimpose
+  "Stack f applied to the pattern against the untouched original."
+  [f p]
+  (stack p (f p)))
+
+(defn off
+  "Stack a copy shifted t cycles later, with f applied to that copy.
+
+  t is in cycles and rational, like every other time value here."
+  [t f p]
+  (stack p (f (late t p))))
+
 (defn- time-rand
   "Deterministic pseudo-random in [0,1) derived from a time value.
 
