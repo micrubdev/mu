@@ -11,6 +11,9 @@ export function midiNoteName (n) {
 // to carry forward the prior drops total without counting the number
 // discontinuity as a drop (since that would report a lie — the dropped
 // cycles happened before the reconnect, not during this connected session).
+// resumed must be set on exactly one cycle — the first after a reconnect.
+// It is neither sticky (setting it every cycle masks all genuine drops) nor
+// deferrable (setting it one cycle late is the same as never setting it).
 export function hudModel (msg, previous, { resumed = false } = {}) {
   const skipped = previous && msg.n !== previous.cycle + 1
   return {
