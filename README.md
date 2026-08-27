@@ -434,3 +434,7 @@ GUI.
 - `docs/repl.md` — the REPL tutorial: starting one, the jam buffer, reading
   patterns without a device
 - `CHANGELOG.md` — what landed, in order
+
+## License
+
+MIT. See [LICENSE](LICENSE).
