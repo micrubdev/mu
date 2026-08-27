@@ -10,20 +10,17 @@
 (defn- with-transport
   "Start a transport over a recording sink, run `f` with it, always stop.
 
-  `stop!` flips `running?` but does not join the render thread, so a
-  cycle already past that check can still finish rendering and publish
-  after `stop!` returns. `mu.tap`'s subscriber set is global, so a
-  stray publish like that can land in the *next* test's freshly
-  subscribed tap. Joining here (bounded, so a hang shows up as a test
-  failure rather than an infinite wait) makes sure the render thread
-  is fully gone before this test's tap goes out of scope."
+  This used to join the render thread by hand, because `stop!` only
+  flipped `running?` and a cycle already past that check could still
+  publish afterwards -- into the next namespace's tap, since `mu.tap`'s
+  subscriber set is global. `stop!` now joins both threads itself (see
+  mu.clock-test/stop-is-synchronous), so the workaround is gone."
   [voices f]
   (let [t (clk/start! {:sink (m/recording-sink)
                        :voices-fn (constantly voices)
                        :bpm 480})]           ; fast cycles keep the test short
     (try (f t)
-         (finally (clk/stop! t)
-                  (.join ^Thread (:render t) 2000)))))
+         (finally (clk/stop! t)))))
 
 (deftest a-subscriber-sees-rendered-cycles
   (let [tp (tap/subscribe!)]

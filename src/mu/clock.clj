@@ -289,11 +289,38 @@
   [{:keys [sink active]}]
   (silence-all! sink active))
 
+(def ^:private STOP-JOIN-MS
+  "How long `stop!` waits for each thread to notice `running?`.
+
+  Render exits within one hop of `wait-until!`; dispatch within its
+  200 ms queue poll. A second is generous for both, and bounded so a
+  wedged thread surfaces as a slow stop rather than a hung REPL."
+  1000)
+
 (defn stop!
-  "Stop the transport and silence every sounding note."
-  [{:keys [running? sink active] :as transport}]
+  "Stop the transport, wait for its threads, and silence every sounding
+  note.
+
+  The join is not tidiness. `running?` is checked once per cycle, at the
+  top, so a render thread already inside the body finishes that cycle --
+  rendering, tracking, and calling `tap/publish!` -- after the flag goes
+  false. `mu.tap`'s subscriber set is global, so that stray frame lands
+  in whatever tap exists by then, which in a test run is the next
+  namespace's. Returning before the threads are gone means `stop!` does
+  not actually mean stopped.
+
+  Silencing happens BEFORE the join, not after. `active` is updated by
+  the render thread a full cycle ahead of dispatch emitting, so letting
+  render run one more cycle first clears the flag for a note whose
+  note-off dispatch never got to send -- the note would be left
+  sounding with nothing left to turn it off."
+  [{:keys [running? sink active render dispatch] :as transport}]
   (reset! running? false)
   (silence-all! sink active)
+  (let [cur (Thread/currentThread)]
+    (doseq [^Thread t [render dispatch]]
+      (when (and t (not (identical? t cur)))
+        (.join t STOP-JOIN-MS))))
   transport)
 
 (defn set-bpm!

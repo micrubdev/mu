@@ -227,3 +227,22 @@
     (is (< 1 @calls) "the clock is still running")
     (is (< @calls 12)
         (str "one poll per cycle plus a little lookahead, got " @calls))))
+
+(deftest stop-is-synchronous
+  ;; `stop!` used to flip `running?` and return without joining. The
+  ;; render thread woke from `wait-until!` already PAST the `@running?`
+  ;; check, finished one more cycle and reached `tap/publish!`.
+  ;; `mu.tap`'s subscriber set is global, so that stray frame landed in
+  ;; whatever tap the NEXT namespace had subscribed --
+  ;; mu.tap-test/nil-publish-is-a-no-op failed about one run in three.
+  ;; mu.clock-tap-test never leaked because it joined by hand.
+  (testing "both threads are gone by the time stop! returns"
+    (let [trans (clk/start! {:sink (m/recording-sink)
+                             :voices-fn (constantly {})
+                             :bpm 120})]
+      (Thread/sleep 50)
+      (clk/stop! trans)
+      (is (not (.isAlive ^Thread (:render trans)))
+          "render thread outlived stop! and can still publish")
+      (is (not (.isAlive ^Thread (:dispatch trans)))
+          "dispatch thread outlived stop!"))))
