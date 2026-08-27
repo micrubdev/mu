@@ -144,4 +144,4 @@ rational time, the `notes` macro and note-literal grammar, the pattern algebra
 `every`, `degrade`, `sometimes`, continuous signals, `with`), a `MidiSink`
 protocol with a `javax` implementation, render and dispatch threads with exact
 panic, a voice registry with per-voice error isolation, and the jitter acceptance
-harness. See `docs/superpowers/specs/2026-08-24-mu-design.md`.
+harness.

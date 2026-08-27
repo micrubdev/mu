@@ -432,9 +432,4 @@ GUI.
 
 - `docs/repl.md` — the REPL tutorial: starting one, the jam buffer, reading
   patterns without a device
-- `docs/superpowers/specs/2026-08-24-mu-design.md` — design spec and rationale
-- `docs/superpowers/plans/2026-08-24-mu.md` — the task-by-task implementation plan
-- `docs/superpowers/specs/2026-08-25-web-vim-view-design.md` — web view design
-- `docs/superpowers/plans/2026-08-25-web-vim-view-server.md` — web view, server plan
-- `docs/superpowers/plans/2026-08-25-web-vim-view-client.md` — web view, client plan
 - `CHANGELOG.md` — what landed, in order
