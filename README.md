@@ -430,6 +430,7 @@ GUI.
 
 ## Documents
 
+- `docs/api.md` — the API reference: every operator, with worked examples
 - `docs/repl.md` — the REPL tutorial: starting one, the jam buffer, reading
   patterns without a device
 - `CHANGELOG.md` — what landed, in order
