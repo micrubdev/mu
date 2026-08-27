@@ -59,6 +59,15 @@ test('nanosecond resolution survives instants beyond 2^53', () => {
   expect(d_ns).toBeCloseTo(0.000000001, 9)
 })
 
+test('reset drops every sample, so the clock is unsynced again', () => {
+  clock.addSample({ sentAt: 10.0, receivedAt: 10.020, serverNanos: 5_000_000_000n })
+  expect(clock.ready()).toBe(true)
+  clock.reset()
+  expect(clock.ready()).toBe(false)
+  expect(clock.rtt()).toBe(null)
+  expect(() => clock.toAudioTime(5_000_000_000n)).toThrow()
+})
+
 test('latency is adjustable and shifts every conversion', () => {
   clock.addSample({ sentAt: 10.0, receivedAt: 10.0, serverNanos: 1_000_000_000n })
   const before = clock.toAudioTime(1_000_000_000n)

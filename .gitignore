@@ -7,6 +7,7 @@ target/
 client/dist/*
 !client/dist/.gitkeep
 client/node_modules
+node_modules/
 
 # Soundfont (licence varies, user-supplied) and js-synthesizer's worklet
 # assets (copied from node_modules by the predev/prebuild npm scripts --

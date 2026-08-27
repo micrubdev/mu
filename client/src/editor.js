@@ -36,6 +36,10 @@ export function topLevelFormAt (text, pos) {
         // or a metadata form (e.g. ^{:a 1}(foo)), both of which fall back to returning
         // the inner form — those would require backward token analysis, which has
         // already over-corrected once on this function. This boundary is deliberate.
+        // Nor #_ followed by a space (e.g. #_ (a)): the space breaks the prefix
+        // run, so the discard is lost and (a) evaluates -- the one case here that
+        // actually runs code the user marked as discarded, not just misdraws a
+        // boundary.
         const charBefore = prefixStart > 0 ? text[prefixStart - 1] : null
         const isValidDelimiter = charBefore === null || /\s|[(){}\[\]"]/.test(charBefore)
         // If leftmost char of run is bare `_`, reject (only meaningful in `#_`)

@@ -19,7 +19,6 @@ export function hudModel (msg, previous, { resumed = false } = {}) {
   return {
     cycle: msg.n,
     bpm: msg.bpm,
-    playing: true,
     drops: (previous ? previous.drops : 0) + (skipped && !resumed ? 1 : 0),
     voices: Object.entries(msg.voices || {})
       .map(([name, v]) => ({ name, chan: v.chan, muted: v.muted,
@@ -44,14 +43,28 @@ export function connectionState ({ socketOpen, lastCycleAt, now }) {
   return (now - lastCycleAt) * 1000 > QUIET_MS ? 'stopped' : 'playing'
 }
 
+// Escapes text before it is interpolated into innerHTML. This is not just
+// a security nicety: an unescaped `<` silently deletes everything after
+// it, and error text like `java.lang.NoSuchMethodException: Foo.<init>()`
+// is routine -- unescaped, the HUD would show a truncated, misleading
+// error instead of the real one.
+function escapeHtml (s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 export function renderHud (el, model, state) {
   el.innerHTML = `
     <div class="transport ${state}">${state} · cycle ${model.cycle} · ${
       model.bpm ?? '--'} bpm${model.drops ? ` · ${model.drops} dropped` : ''}</div>
     <ul class="voices">${model.voices.map(v => `
       <li class="${v.error ? 'error' : ''}${v.muted ? ' muted' : ''}${v.soloed ? ' solo' : ''}">
-        ${v.name} <span class="chan">ch${v.chan}</span>
-        ${v.error ? `<span class="err">${v.error}</span>` : ''}
+        ${escapeHtml(v.name)} <span class="chan">ch${v.chan}</span>
+        ${v.error ? `<span class="err">${escapeHtml(v.error)}</span>` : ''}
       </li>`).join('')}</ul>
     <div class="events">${model.events.map(e => e.name).join(' ')}</div>`
 }

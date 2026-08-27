@@ -28,6 +28,13 @@ export function makeClock () {
       if (samples.length > PING_WINDOW) samples = samples.slice(-PING_WINDOW)
     },
 
+    // Drop every sample. Call this on a reconnect: the sample window
+    // otherwise survives it (PING_WINDOW is 8, a burst adds 5, so up to 3
+    // pre-disconnect samples remain), and best() picks purely by lowest
+    // RTT with no age bound -- a stale sample can anchor the new timeline
+    // and, if it lands wrong, drop every cycle until it ages out.
+    reset () { samples = [] },
+
     ready: () => samples.length > 0,
     rtt: () => (samples.length ? best().rtt : null),
 

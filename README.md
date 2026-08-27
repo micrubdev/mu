@@ -131,12 +131,14 @@ Check each of these:
       boundary, in both.
 - [ ] `dd` in normal mode deletes a line; `i` enters insert; `:w` is
       harmless.
+- [ ] `,e` in normal mode evaluates the form under the cursor, same as
+      `Ctrl-Enter`.
 - [ ] `(mute :bass)` marks the voice in the HUD.
 - [ ] A deliberately broken pattern (`(def bass (notes c2 (/ 1 0)))`) marks
       that voice red in the HUD, keeps playing the last good cycle, and
       prints the error in the output pane.
 - [ ] Killing and restarting the JVM makes the page reconnect on its own,
-      with no hung notes.
+      with no hung notes, and the HUD's dropped count has not increased.
 
 ## Notation
 
