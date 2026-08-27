@@ -78,9 +78,8 @@ a soundfont in the browser. Eval goes to this process's nREPL, so an editor
 and the browser can be attached at once.
 
 The server side of this (HTTP, the `/hud` and `/repl` WebSockets, the nREPL
-bridge) is what `web!` starts. The browser client itself is a separate,
-not-yet-built plan — until it lands, the URL 404s on `/` and the sockets
-are only reachable by something that speaks the wire protocol directly.
+bridge) is what `web!` starts. It serves the browser client from
+`client/dist`, built separately — see below.
 
 The web view carries dependencies (http-kit, cheshire, nREPL); mu's core
 does not, which is why it lives behind the `:web` alias.
@@ -89,6 +88,55 @@ does not, which is why it lives behind the `:web` alias.
 address) only if you deliberately want a remote audience view, since it
 also exposes this process's nREPL — arbitrary code execution — to
 anyone who can reach that interface.
+
+### Building the client
+
+```
+cd client && npm install && npm run build
+```
+
+Drop a General MIDI soundfont at `client/public/gm.sf2` if you want the
+browser to make sound as well as show what is playing; without it the page
+is silent and the HUD still works. The browser trails the JVM's own output
+by about 80 ms — it is for listening remotely and for the audience view,
+not for monitoring in the same room. That lag is a slider ("output
+latency") in the page toolbar if 80 ms needs adjusting for your network.
+
+`cd client && npm run dev` serves the page with hot reload and proxies both
+sockets to the JVM on 7890.
+
+### Verifying by hand
+
+The client's own test suite (`cd client && npm test`) and an automated
+end-to-end check (`node client/scripts/e2e-check.mjs`, needs a live JVM)
+cover everything that doesn't need a person watching a screen and
+listening. What's left needs eyes, ears, and a real browser:
+
+1. Put a General MIDI soundfont at `client/public/gm.sf2` and rebuild.
+2. `clojure -M:web` in one terminal.
+3. In that REPL: `(require '[mu.live :refer :all])` then
+   `(web! {:nrepl-port 7888})`.
+4. Open the printed URL in a browser.
+5. Click **start audio**.
+6. In the browser editor, put the cursor in `(begin! {:bpm 120})` and press
+   `Ctrl-Enter`.
+
+Check each of these:
+
+- [ ] The HUD shows a rising cycle number and `120 bpm`.
+- [ ] `Ctrl-Enter` on the `(def bass ...)` and `(play! ...)` forms starts a
+      bassline, audible **twice** — once from the JVM's own output, once
+      from the browser about 80 ms later.
+- [ ] Editing the pattern and re-evaluating changes it on the next cycle
+      boundary, in both.
+- [ ] `dd` in normal mode deletes a line; `i` enters insert; `:w` is
+      harmless.
+- [ ] `(mute :bass)` marks the voice in the HUD.
+- [ ] A deliberately broken pattern (`(def bass (notes c2 (/ 1 0)))`) marks
+      that voice red in the HUD, keeps playing the last good cycle, and
+      prints the error in the output pane.
+- [ ] Killing and restarting the JVM makes the page reconnect on its own,
+      with no hung notes.
 
 ## Notation
 

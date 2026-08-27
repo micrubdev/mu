@@ -3,10 +3,19 @@
   <head><meta charset="utf-8"><title>mu</title></head>
   <body>
     <div id="app">
-      <button id="start">start audio</button>
-      <div id="editor"></div>
-      <div id="hud"></div>
-      <pre id="output"></pre>
+      <main id="editor-pane">
+        <div class="toolbar">
+          <button id="start">start audio</button>
+          <label class="latency-control">
+            output latency
+            <input type="range" id="latency" min="0" max="300" step="1">
+            <span id="latency-value"></span>
+          </label>
+        </div>
+        <div id="editor"></div>
+        <pre id="output"></pre>
+      </main>
+      <aside id="hud"></aside>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>
