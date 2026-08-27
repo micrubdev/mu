@@ -166,6 +166,39 @@
   [t f p]
   (stack p (f (late t p))))
 
+(defn- bjorklund
+  "Bjorklund's algorithm: distribute k onsets as evenly as possible over
+  n steps. Returns a vector of booleans.
+
+  Only ever called with 0 < k < n -- `euclid` handles the degenerate
+  cases before this point, which is also what guarantees progress:
+  both groups are non-empty, so m >= 1 and the remainder shrinks."
+  [k n]
+  (loop [a (repeat k [true])
+         b (repeat (- n k) [false])]
+    (if (< (count b) 2)
+      (vec (mapcat identity (concat a b)))
+      (let [m (min (count a) (count b))]
+        (recur (mapv into (take m a) (take m b))
+               (concat (drop m a) (drop m b)))))))
+
+(defn euclid
+  "Distribute k onsets as evenly as possible over n steps of one cycle,
+  playing p at each onset and resting otherwise.
+
+  E(3,8) is the tresillo `x..x..x.`; E(5,8) the cinquillo `x.xx.xx.`.
+  `rot` rotates the step vector left, and is taken mod n."
+  ([k n p] (euclid k n 0 p))
+  ([k n rot p]
+   (cond
+     (or (<= n 0) (<= k 0)) silence
+     (>= k n)               (fast n p)
+     :else
+     (let [steps (bjorklund k n)
+           r     (mod rot n)
+           steps (concat (drop r steps) (take r steps))]
+       (apply fastcat (map #(if % p silence) steps))))))
+
 (defn- time-rand
   "Deterministic pseudo-random in [0,1) derived from a time value.
 

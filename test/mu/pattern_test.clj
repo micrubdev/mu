@@ -217,3 +217,43 @@
     (let [q (p/off 1/2 #(p/fmap (constantly :b) %) (p/pure :a))]
       (is (= #{:a :b}
              (set (map :value (filter p/onset? (p/query q [0 1])))))))))
+
+(defn- euclid-str
+  "Render a euclidean rhythm as x-for-onset, .-for-rest over n steps."
+  [k n rot]
+  (let [starts (->> (p/query (p/euclid k n rot (p/pure :a)) [0 1])
+                    (filter p/onset?)
+                    (map (comp first :whole))
+                    set)]
+    (apply str (for [i (range n)] (if (starts (/ i n)) \x \.)))))
+
+(deftest euclid-matches-the-canonical-vectors
+  (testing "E(3,8), the tresillo"
+    (is (= "x..x..x." (euclid-str 3 8 0))))
+  (testing "E(5,8), the cinquillo"
+    (is (= "x.xx.xx." (euclid-str 5 8 0))))
+  (testing "E(2,5)"
+    (is (= "x.x.." (euclid-str 2 5 0)))))
+
+(deftest euclid-rotates-left
+  (is (= "x..x..x." (euclid-str 3 8 0)))
+  (is (= "..x..x.x" (euclid-str 3 8 1)))
+  (testing "rotation wraps, so a full turn is the identity"
+    (is (= (euclid-str 3 8 0) (euclid-str 3 8 8)))
+    (is (= (euclid-str 3 8 1) (euclid-str 3 8 9)))))
+
+(deftest euclid-edges
+  (testing "no onsets is silence"
+    (is (empty? (p/query (p/euclid 0 8 (p/pure :a)) [0 1]))))
+  (testing "no steps is silence"
+    (is (empty? (p/query (p/euclid 3 0 (p/pure :a)) [0 1]))))
+  (testing "negative k is silence, not a crash"
+    (is (empty? (p/query (p/euclid -2 8 (p/pure :a)) [0 1]))))
+  (testing "k = n fills every step"
+    (is (= 8 (count (filter p/onset? (p/query (p/euclid 8 8 (p/pure :a)) [0 1]))))))
+  (testing "k > n also fills every step rather than looping forever"
+    (is (= 4 (count (filter p/onset? (p/query (p/euclid 9 4 (p/pure :a)) [0 1])))))))
+
+(deftest euclid-three-arity-defaults-to-no-rotation
+  (is (= (map (juxt :whole :value) (p/query (p/euclid 3 8 (p/pure :a)) [0 1]))
+         (map (juxt :whole :value) (p/query (p/euclid 3 8 0 (p/pure :a)) [0 1])))))
