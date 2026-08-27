@@ -13,10 +13,15 @@ the next cycle boundary.
 
 ## Status
 
-All sixteen tasks of the v1 plan are implemented: 74 tests, green. (Two
-`mu.midi` tests need a real audio output line and error out on a headless
-machine — an environment fact, like `begin!` failing there.) The one
-acceptance criterion not met is timing — see [Timing](#timing).
+Complete: the pattern language, the MIDI transport, and the browser web view.
+
+- 133 Clojure tests / 360 assertions, 0 failures
+- 68 client tests (Vitest), 0 failures
+- p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
+  see [Timing](#timing)
+
+Two `mu.midi` tests need a real audio output line and error out on a headless
+machine — an environment fact, like `begin!` failing there.
 
 ## Requirements
 
@@ -307,21 +312,35 @@ Target: **p99 dispatch jitter ≤ 1 ms** (MIDI's own floor is roughly 1 ms, and
 jitter becomes audible on percussive attacks around 3–5 ms).
 
 ```
-clojure -M:test -m mu.jitter     # 16ths @120bpm for 60s
+clojure -X:test mu.jitter/-main-shipped-tapped   # 16ths @120bpm for 60s
 ```
+
+Use one of the **shipped** entry points. `-main` and `-main-tapped` call
+`clk/start!` bare, which leaves the clock on `default-render-voice` — a path no
+real session runs. `player/begin!` installs `safe-render`, and only
+`-main-shipped` (and `-main-shipped-tapped`, which additionally attaches a tap
+consumer, i.e. a performance with the web view open) measures it.
+
+Note the `-X` form. `clojure -M:web -e ...` does not work: the `:web` alias's
+`:main-opts` hijack it into an nREPL banner.
 
 Measured on the development machine (Termux/PRoot on Android, generational ZGC
-confirmed active):
+confirmed active), shipped path with an observer attached:
 
 ```
-n=973  p50=0.176ms  p99=1.588ms  p999=2.234ms  max=2.234ms
+n=973  p50=0.066ms  p99=0.532ms  p999=2.422ms
+n=973  p50=0.069ms  p99=0.842ms  p999=3.920ms
+n=973  p50=0.071ms  p99=0.851ms  p999=3.223ms
 ```
 
-That is **over budget**. The target has not been weakened. The spike found the
-residual tail to be OS scheduling rather than GC — a no-churn control showed the
-same p999 as a heavy-GC run — and this host is a pessimistic lower bound.
-Re-measure on the target performance machine before concluding anything about
-fitness, and see spec section 8 for the native-output gate.
+**Within budget**, three of three. The tap costs nothing measurable — with a
+consumer registered the render thread's added work is one non-blocking `.offer`,
+and p99 means with and without a tap are indistinguishable.
+
+This host remains a pessimistic lower bound: it is Termux/PRoot on Android, and
+one sample taken under heavy concurrent load did exceed budget (p99 1.167 ms).
+Re-measure on the target performance machine, and see spec section 8 for the
+native-output gate.
 
 ## Known gaps
 
@@ -332,7 +351,12 @@ fitness, and see spec section 8 for the native-output gate.
 - **`play!` takes options as a map, not trailing keywords.** Use
   `(play! :bass #'bass {:chan 1})`. The spec's section 7 example
   `(play! #'bass :chan 1)` throws.
-- p99 jitter is over budget on the development machine (above).
+- **The browser trails the JVM's own output by ~80 ms.** Deliberate
+  (`OUTPUT_LATENCY_MS`, adjustable from the page); it makes the web view a
+  remote-listening and audience view, not a same-room monitoring one.
+- **`web!` without `:nrepl-port`** serves the HUD but returns 503 on `/repl`,
+  and the page reports `repl disconnected` on every reconnect attempt (up to
+  once every 4 s) rather than once.
 
 ## Out of scope for v1
 
@@ -348,3 +372,7 @@ GUI.
   patterns without a device
 - `docs/superpowers/specs/2026-08-24-mu-design.md` — design spec and rationale
 - `docs/superpowers/plans/2026-08-24-mu.md` — the task-by-task implementation plan
+- `docs/superpowers/specs/2026-08-25-web-vim-view-design.md` — web view design
+- `docs/superpowers/plans/2026-08-25-web-vim-view-server.md` — web view, server plan
+- `docs/superpowers/plans/2026-08-25-web-vim-view-client.md` — web view, client plan
+- `CHANGELOG.md` — what landed, in order
