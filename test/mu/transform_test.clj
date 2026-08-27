@@ -97,3 +97,50 @@
   (testing "a far-future cycle is reachable without playing the ones before"
     (let [d (x/degrade (p/fast 8 (p/pure :a)))]
       (is (= (p/query d [400 401]) (p/query d [400 401]))))))
+
+;; ---- arp ---------------------------------------------------------------
+
+(defn- triad
+  "Three notes sharing one whole -- the shape `chord` produces."
+  []
+  (p/pat (fn [sp]
+           (mapcat (fn [ev]
+                     (for [n [60 64 67]]
+                       (assoc ev :value {:note n})))
+                   (p/query (p/pure nil) sp)))))
+
+(defn- arp-notes [mode]
+  (->> (p/query (x/arp mode (triad)) [0 1])
+       (filter p/onset?)
+       (sort-by (comp first :part))
+       (map (comp :note :value))))
+
+(deftest arp-spreads-a-stack-across-its-own-span
+  (testing ":up walks the stack low to high"
+    (is (= [60 64 67] (arp-notes :up))))
+  (testing ":down walks it high to low"
+    (is (= [67 64 60] (arp-notes :down))))
+  (testing ":updown turns at the top without repeating it"
+    (is (= [60 64 67 64] (arp-notes :updown))))
+  (testing ":downup turns at the bottom without repeating it"
+    (is (= [67 64 60 64] (arp-notes :downup)))))
+
+(deftest arp-gives-each-note-its-own-slot
+  (let [evs (->> (p/query (x/arp :up (triad)) [0 1])
+                 (filter p/onset?)
+                 (sort-by (comp first :part)))]
+    (is (= 3 (count evs)))
+    (is (= [[0 1/3] [1/3 2/3] [2/3 1]] (map :whole evs))
+        "three equal slots across the source event's whole")
+    (is (every? p/onset? evs) "each arpeggiated note is its own onset")))
+
+(deftest arp-leaves-lone-events-alone
+  (testing "a single event is not a stack; it passes through untouched"
+    (let [src (p/pure {:note 60})
+          ev  (first (p/query src [0 1]))
+          out (first (p/query (x/arp :up src) [0 1]))]
+      (is (= (:whole ev) (:whole out)))
+      (is (= (:value ev) (:value out))))))
+
+(deftest arp-rejects-unknown-modes
+  (is (thrown? clojure.lang.ExceptionInfo (x/arp :sideways (triad)))))

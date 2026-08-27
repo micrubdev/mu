@@ -19,8 +19,21 @@
   (gen/fmap #(apply p/fastcat %)
             (gen/vector (gen/elements [:a :b :c :d]) 1 3)))
 
+(def gen-chord-leaf
+  "A stack of note-bearing events sharing one whole -- the shape `chord`
+  produces, and the only thing `arp` actually acts on. Without this in
+  the generator, `arp` would pass every keyword leaf straight through
+  and the laws would not exercise it at all."
+  (gen/fmap (fn [ns]
+              (p/pat (fn [sp]
+                       (mapcat (fn [ev]
+                                 (for [n ns] (assoc ev :value {:note n})))
+                               (p/query (p/pure nil) sp)))))
+            (gen/vector-distinct (gen/choose 48 72) {:min-elements 2
+                                                     :max-elements 4})))
+
 (def gen-leaf
-  (gen/one-of [gen-pure-leaf gen-lifted-leaf]))
+  (gen/one-of [gen-pure-leaf gen-lifted-leaf gen-chord-leaf]))
 
 (def gen-pattern
   (gen/recursive-gen
@@ -36,7 +49,9 @@
                    (gen/tuple (gen/choose 0 5) (gen/choose 0 8) inner))
          (gen/fmap (fn [[t q]] (x/off t p/rev q))
                    (gen/tuple (gen/elements [1/4 1/3 1/2]) inner))
-         (gen/fmap #(x/superimpose p/rev %) inner)]))
+         (gen/fmap #(x/superimpose p/rev %) inner)
+         (gen/fmap (fn [[m q]] (x/arp m q))
+                   (gen/tuple (gen/elements [:up :down :updown :downup]) inner))]))
     gen-leaf))
 
 (def gen-cycle (gen/choose -4 8))

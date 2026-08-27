@@ -99,3 +99,72 @@
   "Apply f to about half the events."
   [f p]
   (sometimes-by 0.5 f p))
+
+(def ^:private arp-orders
+  "How to walk a stack of n notes. Each returns a seq of indices.
+
+  :updown and :downup turn WITHOUT repeating the note they turn on --
+  otherwise a four-note run out of a triad lands on the top twice and
+  the figure limps."
+  {:up     (fn [n] (range n))
+   :down   (fn [n] (reverse (range n)))
+   :updown (fn [n] (concat (range n) (range (- n 2) 0 -1)))
+   :downup (fn [n] (concat (reverse (range n)) (range 1 (dec n))))})
+
+(defn- note-event?
+  "Only note-bearing events form a stack. Everything else -- bare
+  scalars, maps with no :note, continuous signals -- passes through, the
+  same contract `mu.harmony/scale` and `chord` keep."
+  [{:keys [whole value]}]
+  (boolean (and whole (map? value) (contains? value :note))))
+
+(defn arp
+  "Spread simultaneous notes across the span they share.
+
+  Note-bearing events sharing an identical :whole are treated as one
+  stack -- which is exactly what `mu.harmony/chord` produces -- sorted
+  by :note and re-timed into equal slots across that whole. Each note
+  becomes its own onset in its own slot, so an arpeggio triggers n
+  times where the chord triggered once.
+
+  Modes: :up, :down, :updown, :downup.
+
+    (arp :up (chord 3 (notes 0 3 4)))
+
+  A lone event is not a stack and passes through untouched, as does
+  anything without a :note. The sort is total -- :note first, then the
+  printed value -- because a merely stable sort would order unisons by
+  whatever order the query happened to produce them in, and that
+  differs between a split and an unsplit query."
+  [mode p]
+  (let [order (or (arp-orders mode)
+                  (throw (ex-info (str "mu: unknown arp mode " (pr-str mode)
+                                       ". Known: :up, :down, :updown, :downup")
+                                  {:mode mode})))]
+    (p/pat
+      (fn [sp]
+        (let [evs             (p/query p sp)
+              {notes true
+               others false}  (group-by note-event? evs)]
+          (concat
+            others
+            (mapcat
+              (fn [[whole evs]]
+                (if (< (count evs) 2)
+                  evs
+                  (let [sorted (vec (sort-by (juxt (comp :note :value)
+                                                   (comp pr-str :value))
+                                             evs))
+                        idxs   (vec (order (count sorted)))
+                        steps  (count idxs)
+                        [wb we] whole
+                        len    (/ (- we wb) steps)]
+                    (keep-indexed
+                      (fn [i idx]
+                        (let [b    (+ wb (* i len))
+                              slot [b (+ b len)]
+                              part (t/sect slot (:part (nth sorted idx)))]
+                          (when part
+                            (assoc (nth sorted idx) :whole slot :part part))))
+                      idxs))))
+              (group-by :whole notes))))))))
