@@ -8,7 +8,8 @@
   Checked against clojure.core, the operator names here collide in
   exactly one place: `rand`. (`every?` is core; `every` is not.)"
   (:refer-clojure :exclude [rand])
-  (:require [mu.notation]
+  (:require [mu.harmony]
+            [mu.notation]
             [mu.pattern]
             [mu.player]))
 
@@ -36,7 +37,10 @@
   mu.pattern/every    mu.pattern/degrade mu.pattern/degrade-by
   mu.pattern/sometimes mu.pattern/sometimes-by
   mu.pattern/sine     mu.pattern/saw     mu.pattern/tri  mu.pattern/rand
+  mu.pattern/euclid   mu.pattern/off     mu.pattern/superimpose
   mu.pattern/fmap     mu.pattern/with
+  ;; harmony
+  mu.harmony/scale    mu.harmony/chord
   ;; player
   mu.player/play!     mu.player/stop-voice!
   mu.player/hush      mu.player/panic

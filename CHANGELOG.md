@@ -7,6 +7,18 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Tier 1 vocabulary
+
+- `euclid` — k onsets over n steps, with optional rotation. E(3,8) is the
+  tresillo.
+- `off` and `superimpose` — stack a transformed copy against the original.
+- `mu.harmony` — degree-based `scale` over fifteen modes, and scale-relative
+  `chord` whose quality falls out of the mode.
+- `stack`, `slowcat` and `fastcat` (so `cyc` and `sub`) now lift raw values
+  with `pure`, so `(sub 0.9 0.5 0.7)` works. Closes the first Known Gap.
+
+`jux` is deferred until CC support gives it a pan to use.
+
 ### Web view — browser client
 
 A browser page with a modal-vim Clojure editor that evaluates into the running

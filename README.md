@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 133 Clojure tests / 360 assertions, 0 failures
+- 157 Clojure tests / 420 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -186,8 +186,8 @@ a query span bisecting a note would retrigger it mid-sustain.
 **Primitives** — `pure`, `silence`, `stack` (parallel), `slowcat`/`cyc` (one per
 cycle), `fastcat`/`sub` (all squeezed into one cycle).
 
-**Transforms** — `fast`, `slow`, `early`, `late`, `rev`, `every`, `degrade`,
-`degrade-by`, `sometimes`, `sometimes-by`.
+**Transforms** — `fast`, `slow`, `early`, `late`, `rev`, `every`, `off`,
+`superimpose`, `euclid`, `degrade`, `degrade-by`, `sometimes`, `sometimes-by`.
 
 **Signals** — `sine`, `saw`, `tri`, `rand`. Continuous, `:whole nil`, so they
 never trigger on their own. Change rate with `fast`, not an argument.
@@ -219,6 +219,53 @@ Structure comes from the left, values from the right.
 
 Recognised value keys are `:note`, `:vel` (0.0–1.0 or a raw 0–127 integer), and
 `:chan`. A per-event `:chan` overrides the voice's channel.
+
+## Scales and chords
+
+Patterns carry integer scale *degrees*; `scale` maps them to MIDI against a
+root. Re-rooting or re-moding a whole line is then one edit.
+
+```clojure
+(scale :dorian :d3 (notes 0 2 4 [6 4]))
+(scale :dorian :f3 (notes 0 2 4 [6 4]))   ; the whole line moves
+```
+
+The root is a note-name keyword (`:d3`) or a raw MIDI number. Keywords keep
+`scale` an ordinary function, so it composes:
+
+```clojure
+(every 4 #(scale :lydian :d3 %) riff)
+```
+
+`chord` turns each degree into a diatonic stack, and runs **inside** `scale`,
+on degrees, before they become notes:
+
+```clojure
+(scale :dorian :d3
+  (chord 3 (notes 0 3 4 3)))   ; triads, correct quality per degree, free
+```
+
+`(chord 4 ...)` gives sevenths. A chord is one onset, not several: every note
+carries the source event's timing.
+
+Modes: the seven church modes (`:ionian`/`:major` through `:locrian`, with
+`:minor` = `:aeolian`), plus `:harmonic-minor`, `:melodic-minor`,
+`:major-pent`, `:minor-pent`, `:blues`, `:chromatic`. An unknown mode throws,
+naming the ones that exist.
+
+`euclid` distributes k onsets over n steps — E(3,8) is the tresillo:
+
+```clojure
+(euclid 3 8 (notes c2))       ; x..x..x.
+(euclid 3 8 1 (notes c2))     ; rotated left one step
+```
+
+`off` and `superimpose` stack a transformed copy against the original:
+
+```clojure
+(off 1/8 (partial fast 2) riff)
+(superimpose rev riff)
+```
 
 ## The live-coding model
 
@@ -344,10 +391,6 @@ native-output gate.
 
 ## Known gaps
 
-- **The concatenations do not lift scalars.** `cyc`, `sub`, `stack`, `slowcat`,
-  and `fastcat` require Patterns; a raw number throws an NPE at query time. Wrap
-  with `pure`: `(sub (pure 0.9) (pure 0.5))`, not `(sub 0.9 0.5)`. The design
-  spec's section 5 example `(cyc 0.9 0.5 0.7)` does not work as written.
 - **`play!` takes options as a map, not trailing keywords.** Use
   `(play! :bass #'bass {:chan 1})`. The spec's section 7 example
   `(play! #'bass :chan 1)` throws.
@@ -360,8 +403,8 @@ native-output gate.
 ## Out of scope for v1
 
 Listed so nobody adds them opportunistically: CC/bend/aftertouch automation
-(`with` already carries the keys; only `mu.midi/encode` needs cases), scale and
-chord libraries, MIDI input and clock sync, explicit transitions and crossfades,
+(`with` already carries the keys; only `mu.midi/encode` needs cases), `jux`
+(waits on pan), MIDI input and clock sync, explicit transitions and crossfades,
 the native timestamped sink (gated on measurement), multi-port routing, and any
 GUI.
 
