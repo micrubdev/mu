@@ -7,13 +7,17 @@ export function midiNoteName (n) {
 
 // The view model. Pure, so the display logic is testable and the DOM
 // layer stays a template with no decisions in it.
-export function hudModel (msg, previous) {
+// Caller sets resumed: true for the first cycle after a socket reconnect,
+// to carry forward the prior drops total without counting the number
+// discontinuity as a drop (since that would report a lie — the dropped
+// cycles happened before the reconnect, not during this connected session).
+export function hudModel (msg, previous, { resumed = false } = {}) {
   const skipped = previous && msg.n !== previous.cycle + 1
   return {
     cycle: msg.n,
     bpm: msg.bpm,
     playing: true,
-    drops: (previous ? previous.drops : 0) + (skipped ? 1 : 0),
+    drops: (previous ? previous.drops : 0) + (skipped && !resumed ? 1 : 0),
     voices: Object.entries(msg.voices || {})
       .map(([name, v]) => ({ name, chan: v.chan, muted: v.muted,
                              soloed: v.soloed, error: v.error }))
@@ -33,7 +37,7 @@ const QUIET_MS = 2000
 
 export function connectionState ({ socketOpen, lastCycleAt, now }) {
   if (!socketOpen) return 'disconnected'
-  if (lastCycleAt === null) return 'stopped'
+  if (lastCycleAt == null) return 'stopped'
   return (now - lastCycleAt) * 1000 > QUIET_MS ? 'stopped' : 'playing'
 }
 

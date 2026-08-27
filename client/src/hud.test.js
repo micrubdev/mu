@@ -76,3 +76,29 @@ test('an open socket gone quiet reads as stopped, not disconnected', () => {
   expect(connectionState({ socketOpen: true, lastCycleAt: 95, now: 100 }))
     .toBe('stopped')
 })
+
+test('an open socket with undefined lastCycleAt reads as stopped, not playing', () => {
+  // Loose equality (== null) catches both null and undefined.
+  // A caller that declares its state variable without explicitly assigning
+  // null must not defeat the three-state distinction.
+  expect(connectionState({ socketOpen: true, lastCycleAt: undefined, now: 100 }))
+    .toBe('stopped')
+})
+
+test('resumed: true skips counting a cycle-number jump as a drop', () => {
+  // On reconnect, the cycle number may jump. That jump does not mean
+  // cycles were dropped during this connected session; they were dropped
+  // before the reconnect. Carry forward the prior total unchanged.
+  const first = hudModel({ ...msg, n: 10 }, null)
+  expect(first.drops).toBe(0)
+  const afterJump = hudModel({ ...msg, n: 15 }, first, { resumed: true })
+  expect(afterJump.drops).toBe(0)
+})
+
+test('resumed: false (default) still counts a cycle-number jump as a drop', () => {
+  // Regression: the default behaviour must not change.
+  const first = hudModel({ ...msg, n: 10 }, null)
+  expect(first.drops).toBe(0)
+  const afterJump = hudModel({ ...msg, n: 15 }, first)
+  expect(afterJump.drops).toBe(1)
+})
