@@ -40,3 +40,36 @@
     (testing "a STALE spelling is ignored, not printed"
       (is (= (pitch/default-spell 63) (pitch/spelled {:note 63 :spell eb})))
       (is (not= eb (pitch/spelled {:note 63 :spell eb}))))))
+
+(deftest advance-walks-letters-and-fixes-the-accidental
+  (testing "C4 up two letters, sounding 64, is E4"
+    (is (= {:step :e :alter 0 :octave 4}
+           (pitch/advance {:step :c :alter 0 :octave 4} 2 64))))
+  (testing "E-flat 3 up two letters, sounding 55, is G3"
+    (is (= {:step :g :alter 0 :octave 3}
+           (pitch/advance {:step :e :alter -1 :octave 3} 2 55))))
+  (testing "past B the letter wraps and the octave follows"
+    (is (= {:step :c :alter 0 :octave 4}
+           (pitch/advance {:step :b :alter 0 :octave 3} 1 60))))
+  (testing "backwards, below the root"
+    (is (= {:step :b :alter 0 :octave 2}
+           (pitch/advance {:step :c :alter 0 :octave 3} -1 47))))
+  (testing "the accidental is whatever makes it sound right"
+    (is (= {:step :f :alter 1 :octave 4}
+           (pitch/advance {:step :d :alter 0 :octave 4} 2 66)))))
+
+(deftest transpose-moves-note-and-spelling-together
+  (let [c4 (p/pure {:note 60 :spell {:step :c :alter 0 :octave 4}})
+        v  (fn [q] (:value (first (p/query q [0 1]))))]
+    (testing "a major third off C4 is E4"
+      (is (= {:note 64 :spell {:step :e :alter 0 :octave 4}} (v (pitch/transpose :M3 c4)))))
+    (testing "a minor third off C4 is E-flat 4, not D-sharp"
+      (is (= {:note 63 :spell {:step :e :alter -1 :octave 4}} (v (pitch/transpose :m3 c4)))))
+    (testing "an octave"
+      (is (= {:note 72 :spell {:step :c :alter 0 :octave 5}} (v (pitch/transpose :P8 c4)))))
+    (testing "an event with no spelling gets only :note moved"
+      (is (= {:note 64} (v (pitch/transpose :M3 (p/pure {:note 60}))))))
+    (testing "values that are not note maps pass through"
+      (is (= 0.5 (v (pitch/transpose :M3 (p/pure 0.5))))))
+    (testing "an unknown interval throws, naming the known ones"
+      (is (thrown? clojure.lang.ExceptionInfo (pitch/transpose :Q9 c4))))))

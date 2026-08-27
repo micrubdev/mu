@@ -51,3 +51,50 @@
   (if (and spell (= (long note) (spell->midi spell)))
     spell
     (default-spell note)))
+
+(defn advance
+  "Move a spelling `letter-steps` letters on, landing on `target-midi`.
+
+  The letter decides the octave, not the sounding pitch: B-sharp 3 and
+  C4 are the same note and different letters, and this is what keeps
+  that straight. `Math/floorDiv`, not `quot`, so walking backwards past
+  C drops an octave correctly."
+  [{:keys [step octave]} letter-steps target-midi]
+  (let [i   (+ (.indexOf ^java.util.List steps step) (long letter-steps))
+        idx (mod i 7)
+        oct (+ (long octave) (Math/floorDiv (long i) 7))
+        st  (nth steps idx)]
+    {:step   st
+     :alter  (- (long target-midi) (+ (natural st) (* 12 (inc oct))))
+     :octave oct}))
+
+(def intervals
+  "Named intervals as [letter-steps semitones].
+
+  The letter-step count is the whole point: C up a major third is E --
+  two letters on -- not F-flat, and only the name carries that."
+  {:P1 [0 0]  :m2 [1 1]  :M2 [1 2]  :m3 [2 3]  :M3 [2 4]
+   :P4 [3 5]  :A4 [3 6]  :d5 [4 6]  :P5 [4 7]  :m6 [5 8]
+   :M6 [5 9]  :m7 [6 10] :M7 [6 11] :P8 [7 12]})
+
+(defn transpose
+  "Move a pattern by a named interval, keeping the spelling exact.
+
+    (transpose :M3 (notes c4 ef3))   ; => E4 and G3
+
+  Semitones would not do: up one from C is equally C-sharp or D-flat,
+  so only a named interval carries enough to spell the result. An event
+  with no :spell gets only :note moved."
+  [interval p]
+  (let [[ls semis]
+        (or (intervals interval)
+            (throw (ex-info (str "mu: unknown interval " (pr-str interval) ". Known: "
+                                 (clojure.string/join ", " (sort (map name (keys intervals)))))
+                            {:interval interval :known (set (keys intervals))})))]
+    (p/fmap (fn [v]
+              (if (and (map? v) (contains? v :note))
+                (let [n (+ (long (:note v)) (long semis))]
+                  (cond-> (assoc v :note n)
+                    (:spell v) (assoc :spell (advance (:spell v) ls n))))
+                v))
+            p)))
