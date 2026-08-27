@@ -7,6 +7,21 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Pitch spelling
+
+- `mu.pitch` — the spell shape (`{:step :e :alter -1 :octave 3}`), `spelled`,
+  and `transpose` by named interval. Semitone transposition cannot preserve a
+  spelling; a named interval carries the letter-step count that can.
+- `notes` literals now carry the spelling they were written with; `scale`
+  derives one by advancing the root's letter. `:blues`, `:chromatic` and a raw
+  MIDI root spell nothing rather than guessing — a wrong glyph is worse than a
+  plain one.
+- `:note` is unchanged and still canonical. Spelling is advisory and verified
+  by `spelled`, the only reader.
+
+Phase 1 of the composition roadmap: the information a score needs, produced
+but not yet consumed.
+
 ### Namespace splits
 
 `mu.clock` was 329 lines against the ~300 constraint, so the pure half moved

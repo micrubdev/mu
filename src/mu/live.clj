@@ -12,6 +12,7 @@
             [mu.harmony]
             [mu.notation]
             [mu.pattern]
+            [mu.pitch]
             [mu.player]
             [mu.transform]))
 
@@ -47,6 +48,8 @@
   mu.harmony/scale    mu.harmony/chord
   ;; grammars
   mu.grammar/lsys
+  ;; pitch
+  mu.pitch/transpose  mu.pitch/spelled
   ;; player
   mu.player/play!     mu.player/stop-voice!
   mu.player/hush      mu.player/panic

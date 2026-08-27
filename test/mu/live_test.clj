@@ -62,3 +62,18 @@
           ns    (->> (query q [0 1]) (filter p/onset?)
                      (sort-by (comp first :part)) (map (comp :note :value)))]
       (is (= [50 52 50 50 52] ns)))))
+
+(deftest spelling-is-available-in-a-jam-buffer
+  (testing "the operators resolve"
+    (is (some? (transpose :M3 (notes c4))))
+    (is (some? (spelled {:note 60}))))
+  (testing "a literal keeps its spelling through a transposition"
+    (let [q (transpose :m3 (notes c4))
+          v (:value (first (query q [0 1])))]
+      (is (= 63 (:note v)))
+      (is (= {:step :e :alter -1 :octave 4} (:spell v)) "E-flat, not D-sharp")))
+  (testing "scale and transpose compose"
+    (let [q  (transpose :P8 (scale :dorian :d3 (notes 0 2)))
+          vs (map :value (query q [0 1]))]
+      (is (= [62 65] (map :note vs)))
+      (is (= [:d :f] (map (comp :step :spell) vs))))))

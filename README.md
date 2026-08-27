@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 180 Clojure tests / 484 assertions, 0 failures
+- 199 Clojure tests / 863 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -191,6 +191,11 @@ cycle), `fastcat`/`sub` (all squeezed into one cycle).
 `degrade-by`, `sometimes`, `sometimes-by`. The linear time transforms live in
 `mu.pattern`; the rest in `mu.transform`, and `lsys` in `mu.grammar`.
 
+**Pitch** — `transpose` moves a pattern by a named interval (`:m3`, `:M3`,
+`:P5`, …), keeping the written spelling exact: C up a major third is E, and
+E-flat up a major third is G. Semitones cannot do this — up one from C is
+equally C-sharp or D-flat — which is why the interval is named.
+
 **Signals** — `sine`, `saw`, `tri`, `rand`. Continuous, `:whole nil`, so they
 never trigger on their own. Change rate with `fast`, not an argument.
 
@@ -254,6 +259,26 @@ Modes: the seven church modes (`:ionian`/`:major` through `:locrian`, with
 `:minor` = `:aeolian`), plus `:harmonic-minor`, `:melodic-minor`,
 `:major-pent`, `:minor-pent`, `:blues`, `:chromatic`. An unknown mode throws,
 naming the ones that exist.
+
+### How notes are written
+
+An event's `:note` says how it sounds; an optional `:spell` says how it is
+written. `(notes ef3)` carries E-flat, not D-sharp, and `scale` spells its
+degrees by advancing the root's letter — degree 2 of D dorian is an F.
+
+```clojure
+(notes ef3)                 ; => {:note 51 :spell {:step :e :alter -1 :octave 3}}
+(notes 51)                  ; => {:note 51}          no spelling to know
+(transpose :m3 (notes c4))  ; => {:note 63 :spell {:step :e :alter -1 :octave 4}}
+```
+
+Spelling is advisory. Nothing stops `(update % :note + 12)` leaving it stale,
+so `spelled` — the only reader — returns a carried spelling only when it
+agrees with `:note`, and a plain flat spelling otherwise. A wrong notehead is
+worse than a plain one.
+
+`:blues`, `:chromatic` and a raw MIDI root have no canonical letter per degree
+and spell nothing.
 
 `arp` spreads a chord across the slot it occupied, so one onset becomes n:
 
@@ -322,7 +347,7 @@ One failing voice cannot affect its neighbours or the clock.
 
 ## Architecture
 
-Eleven namespaces in a strict downward dependency chain. `mu.time`,
+Twelve namespaces in a strict downward dependency chain. `mu.time`,
 `mu.pattern`, `mu.transform`, `mu.grammar` and `mu.harmony` are pure and
 total, so the whole music algebra is testable with no clock, no device, and no
 threads.
@@ -333,6 +358,7 @@ threads.
 | `src/mu/pattern.clj` | the `Pattern` record and the query algebra |
 | `src/mu/transform.clj` | the derived vocabulary built on the algebra |
 | `src/mu/grammar.clj` | generative grammars: rules that grow a pattern |
+| `src/mu/pitch.clj` | spelled pitch: the shape, its one reader, interval transposition |
 | `src/mu/harmony.clj` | modes, degrees to MIDI, diatonic stacks |
 | `src/mu/notation.clj` | the `notes` macro and note-literal grammar |
 | `src/mu/midi.clj` | `MidiSink` protocol, encoding, recording + javax sinks |

@@ -26,7 +26,7 @@ the exclude. (`every?` is core; `every` is not.)
 - [Randomness](#randomness) — `degrade`, `sometimes`
 - [Signals](#signals) — `sine`, `saw`, `tri`, `rand`
 - [Values](#values) — `fmap`, `with`
-- [Harmony](#harmony) — `scale`, `chord`, `arp`
+- [Harmony](#harmony) — `scale`, `chord`, `arp`, `transpose`
 - [Performance](#performance) — `play!`, `mute`, `begin!`, transport
 - [Web view](#web-view) — `web!`
 - [Index](#index)
@@ -398,6 +398,63 @@ becomes n onsets in n slots.
 
 Anything without a `:note`, and any lone event, passes through untouched.
 
+### How notes are written
+
+An event's `:note` says how it **sounds**; an optional `:spell` says how it is
+**written**. MIDI 51 is both D♯3 and E♭3 — same sound, different music.
+
+```clojure
+(notes ef3)     ;;=> {:note 51, :spell {:step :e, :alter -1, :octave 3}}
+(notes 51)      ;;=> {:note 51}          a raw number has no spelling to know
+```
+
+`scale` spells its degrees by advancing the root's letter, so degree 2 of D
+dorian is an F rather than an E♯:
+
+```clojure
+(scale :dorian :d3 (notes 0 1 2 3))
+;; note/letter => ([50 :d] [52 :e] [53 :f] [55 :g])
+```
+
+`:blues`, `:chromatic` and a raw MIDI root have no canonical letter per degree
+and spell nothing. Guessing would print a wrong glyph:
+
+```clojure
+(scale :chromatic :c4 (notes 0))   ;;=> {:note 60}
+```
+
+### `transpose`
+
+```clojure
+(transpose interval p)   ; :P1 :m2 :M2 :m3 :M3 :P4 :A4 :d5 :P5 :m6 :M6 :m7 :M7 :P8
+```
+
+Moves the pattern by a named interval, keeping the spelling exact:
+
+```clojure
+(transpose :M3 (notes c4))   ;;=> {:note 64, :spell {:step :e, :alter 0, :octave 4}}
+(transpose :m3 (notes c4))   ;;=> {:note 63, :spell {:step :e, :alter -1, :octave 4}}
+```
+
+Semitones could not do this — up one from C is equally C♯ or D♭ — which is why
+the interval is named rather than numeric. An event with no `:spell` gets only
+`:note` moved. An unknown interval throws, naming the known ones.
+
+### `spelled`
+
+Spelling is **advisory**: nothing stops `(update % :note + 12)` leaving it
+stale. `spelled` is the only reader, and returns a carried spelling only when
+it agrees with `:note`:
+
+```clojure
+(spelled {:note 63})                                       ;;=> {:step :e, :alter -1, :octave 4}
+(spelled {:note 63 :spell {:step :e :alter -1 :octave 3}})  ;;=> {:step :e, :alter -1, :octave 4}
+```
+
+The second is the drift case — the carried E♭3 does not sound as 63, so it is
+ignored and a plain spelling used. Defaults are **flats**, matching mu's own
+note names: it writes `eb2`, never `d#2`.
+
 ## Performance
 
 Voices hold **vars**, not pattern values, and the render thread derefs every
@@ -495,9 +552,11 @@ interface.
 | `sometimes-by` | `[amt f p]` |
 | `stack` | `[& ps]` |
 | `stop-voice!` | `[k]` |
+| `spelled` | `[event]` |
 | `stut` | `[n fb t p]` |
 | `sub` | alias of `fastcat` |
 | `superimpose` | `[f p]` |
+| `transpose` | `[interval p]` |
 | `tri` | signal |
 | `unmute` | `[k]` |
 | `unsolo` | `[]` |
