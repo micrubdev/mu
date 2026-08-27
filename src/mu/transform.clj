@@ -143,31 +143,45 @@
                                   {:mode mode})))]
     (p/pat
       (fn [sp]
-        (let [evs             (p/query p sp)
-              {notes true
-               others false}  (group-by note-event? evs)]
-          (concat
-            others
-            (mapcat
-              (fn [[whole evs]]
-                (if (< (count evs) 2)
-                  evs
-                  (let [sorted (vec (sort-by (juxt (comp :note :value)
-                                                   (comp pr-str :value))
-                                             evs))
-                        idxs   (vec (order (count sorted)))
-                        steps  (count idxs)
-                        [wb we] whole
-                        len    (/ (- we wb) steps)]
-                    (keep-indexed
-                      (fn [i idx]
-                        (let [b    (+ wb (* i len))
-                              slot [b (+ b len)]
-                              part (t/sect slot (:part (nth sorted idx)))]
-                          (when part
-                            (assoc (nth sorted idx) :whole slot :part part))))
-                      idxs))))
-              (group-by :whole notes))))))))
+        ;; Query a whole cycle at a time and clip, the way `rev` and
+        ;; `every` do. Grouping is the reason: a stack is discovered by
+        ;; which events share a :whole IN THIS QUERY, so a narrower span
+        ;; could see fewer notes and slot the arpeggio differently.
+        ;; Anchoring on the containing cycle makes the grouping -- and
+        ;; therefore the slots -- independent of how the span was carved.
+        (mapcat
+          (fn [[qb qe :as piece]]
+            (let [c    (t/floor-cycle qb)
+                  full [c (inc c)]
+                  evs  (p/query p full)
+                  {notes true others false} (group-by note-event? evs)
+                  arped
+                  (mapcat
+                    (fn [[whole evs]]
+                      (if (< (count evs) 2)
+                        evs
+                        (let [sorted (vec (sort-by (juxt (comp :note :value)
+                                                         (comp pr-str :value))
+                                                   evs))
+                              idxs   (vec (order (count sorted)))
+                              steps  (count idxs)
+                              [wb we] whole
+                              len    (/ (- we wb) steps)]
+                          (keep-indexed
+                            (fn [i idx]
+                              (let [b    (+ wb (* i len))
+                                    slot [b (+ b len)]
+                                    part (t/sect slot (:part (nth sorted idx)))]
+                                (when part
+                                  (assoc (nth sorted idx) :whole slot :part part))))
+                            idxs))))
+                    (group-by :whole notes))]
+              ;; clip everything back to the span actually asked for
+              (keep (fn [ev]
+                      (when-let [part (t/sect (:part ev) piece)]
+                        (assoc ev :part part)))
+                    (concat others arped))))
+          (t/split-cycles sp))))))
 
 (defn iter
   "Rotate the pattern one nth of a cycle further on each successive
