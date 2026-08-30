@@ -6,7 +6,20 @@
   grammar is a note, everything else is left alone to resolve normally.
   That single rule is why `(cyc bb4 a4)` means two alternating notes
   while `(rev riff)` still resolves `riff`, inside the same form, with
-  no unquote operator."
+  no unquote operator.
+
+  A KEYWORD is a drum name -- `(notes :bd _ :sn)` -- carried as
+  {:drum :bd} for `mu.kit/kit` to resolve later. Keywords rather than
+  bare `bd`/`sn` symbols, because a bare-symbol surface would need a
+  closed list of known drum names to tell a drum from a var: a second,
+  arbitrary rule beside \"spelling decides\", shadowing any var a user
+  names `bd`, with no way in for a custom kit's names.
+
+  A `notes` body is note-literal notation, and this is true of nested
+  forms too: `(notes (arp :up p))` reads `:up` as a drum, exactly as
+  `(notes (fast 2 c4))` already reads `2` as a note. Transforms wrap a
+  `notes` form from outside -- `(arp :up (notes ...))` -- they do not
+  live inside one."
   (:require [mu.pattern :as p]))
 
 (def ^:private note-re #"^([a-g])([sf#b]*)(-?\d)$")
@@ -54,6 +67,7 @@
                      `(p/pure {:note ~m :spell ~(note-name->spell form)})
                      form)
     (number? form) `(p/pure {:note ~form})
+    (keyword? form) `(p/pure {:drum ~form})
     (vector? form) `(p/sub ~@(map rewrite form))
     (seq? form)    (cons (first form) (map rewrite (rest form)))
     :else          form))

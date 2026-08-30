@@ -78,3 +78,28 @@
               v (vals q)]
         (is (= (:note v) (pitch/spell->midi (:spell v)))
             (str "disagreement in " (pr-str v)))))))
+
+;; ---- drum names -------------------------------------------------------
+
+(deftest a-keyword-is-a-drum-name
+  (is (= [{:drum :bd}]
+         (map :value (p/query (notes :bd) [0 1])))))
+
+(deftest drum-names-subdivide-like-notes
+  (let [evs (->> (p/query (notes :bd _ :sn [:hh :hh]) [0 1])
+                 (filter p/onset?)
+                 (sort-by (comp first :whole)))]
+    (is (= [{:drum :bd} {:drum :sn} {:drum :hh} {:drum :hh}]
+           (map :value evs)))
+    (is (= [[0 1/4] [1/2 3/4] [3/4 7/8] [7/8 1]]
+           (map :whole evs)))))
+
+(deftest drums-and-notes-mix-in-one-body
+  (is (= [{:drum :bd} {:note 60 :spell {:step :c :alter 0 :octave 4}}]
+         (map :value (->> (p/query (notes :bd c4) [0 1])
+                          (sort-by (comp first :whole)))))))
+
+(deftest a-bare-symbol-still-resolves
+  (let [riff (notes c4)]
+    (is (= [{:note 60 :spell {:step :c :alter 0 :octave 4}}]
+           (map :value (p/query (notes riff) [0 1]))))))
