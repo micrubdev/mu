@@ -56,3 +56,31 @@
   (pl/play! :b (notes d4))
   (pl/hush)
   (is (empty? (pl/voices))))
+
+;; ---- kits -------------------------------------------------------------
+
+(def ^:private beat-under-test (notes :bd))
+
+(deftest a-drum-voice-resolves-through-the-default-kit
+  (pl/play! :d (notes :bd))
+  (is (= [{:drum :bd :note 36 :chan 9}]
+         (map :value (p/query (:pattern (:d (pl/current-voices))) [0 1])))))
+
+(deftest a-voice-kit-option-overrides-the-default
+  (pl/play! :d (notes :bd) {:kit {:bd 99}})
+  (is (= [{:drum :bd :note 99 :chan 9}]
+         (map :value (p/query (:pattern (:d (pl/current-voices))) [0 1])))))
+
+(deftest a-pitched-voice-is-unchanged-by-the-kit
+  (pl/play! :b (notes c4))
+  (is (= [{:note 60 :spell {:step :c :alter 0 :octave 4}}]
+         (map :value (p/query (:pattern (:b (pl/current-voices))) [0 1])))))
+
+(deftest redefining-a-drum-var-still-lands
+  (testing "the kit is applied after the deref, so the live-coding model holds"
+    (pl/play! :d #'beat-under-test)
+    (is (= [{:drum :bd :note 36 :chan 9}]
+           (map :value (p/query (:pattern (:d (pl/current-voices))) [0 1]))))
+    (with-redefs [beat-under-test (notes :sn)]
+      (is (= [{:drum :sn :note 38 :chan 9}]
+             (map :value (p/query (:pattern (:d (pl/current-voices))) [0 1])))))))

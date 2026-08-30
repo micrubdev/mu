@@ -77,3 +77,7 @@
           vs (map :value (query q [0 1]))]
       (is (= [62 65] (map :note vs)))
       (is (= [:d :f] (map (comp :step :spell) vs))))))
+
+(deftest kit-and-gm-are-exported
+  (is (some? (kit gm (notes :bd))))
+  (is (= 36 (:bd gm))))

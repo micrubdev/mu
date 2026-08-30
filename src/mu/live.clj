@@ -10,6 +10,7 @@
   (:refer-clojure :exclude [rand])
   (:require [mu.grammar]
             [mu.harmony]
+            [mu.kit]
             [mu.notation]
             [mu.pattern]
             [mu.pitch]
@@ -46,6 +47,8 @@
   mu.pattern/fmap     mu.pattern/with
   ;; harmony
   mu.harmony/scale    mu.harmony/chord
+  ;; percussion
+  mu.kit/kit          mu.kit/gm
   ;; grammars
   mu.grammar/lsys
   ;; pitch

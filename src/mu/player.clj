@@ -6,6 +6,7 @@
   redefining a var lands on the next cycle boundary, in time, with no
   transition machinery."
   (:require [mu.clock :as clk]
+            [mu.kit :as kit]
             [mu.midi :as midi]
             [mu.pattern :as p]))
 
@@ -23,16 +24,29 @@
   [x]
   (if (var? x) @x x))
 
+(defn- apply-kit
+  "Resolve a voice's drum names, defaulting to General MIDI.
+
+  Applied here rather than in `play!` because a voice holds a VAR:
+  wrapping at registration time would snapshot it and kill the
+  redefinition model. A no-op on pitched patterns, so every voice can
+  go through it unconditionally."
+  [v pat]
+  (if (p/pattern? pat)
+    (kit/kit (get v :kit kit/gm) pat)
+    pat))
+
 (defn current-voices
-  "The voices that should sound right now, with vars dereferenced and
-  mute/solo applied. Called once per cycle by the render thread."
+  "The voices that should sound right now, with vars dereferenced, kits
+  applied and mute/solo honoured. Called once per cycle by the render
+  thread."
   []
   (let [solo @!soloed
         mute @!muted]
     (into {}
           (for [[k v] @!voices
                 :when (if solo (= k solo) (not (mute k)))]
-            [k (update v :pattern resolve-pattern)]))))
+            [k (update v :pattern #(apply-kit v (resolve-pattern %)))]))))
 
 (defn safe-render
   "Query one voice for one cycle, surviving anything the pattern does.
