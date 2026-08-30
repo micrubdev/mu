@@ -55,6 +55,9 @@ Open a jam buffer:
 (def bass (notes c2 _ eb2 g2))
 (play! :bass #'bass {:chan 0})
 
+(def beat (notes :bd _ :sn [:hh :hh]))
+(play! :drums #'beat)                 ; keywords are drum names; gm kit
+
 (bpm 140)     ; applies at the next cycle boundary
 (hush)        ; drop every voice and silence what is sounding
 (end!)        ; stop the transport and close the port
@@ -154,6 +157,7 @@ Check each of these:
 |---|---|
 | symbol matching `[a-g](s\|#\|f\|b)*-?[0-9]` | note literal — `c4`, `cs4`, `ef3`, `bb2`, `c-1` |
 | `_` | rest |
+| keyword | drum name — `:bd`, `:sn`, `:hh`, or any name your kit defines |
 | any other symbol | left alone; resolves as a var |
 | vector | subdivision |
 | list | a call, with its arguments rewritten by these same rules |
@@ -171,6 +175,27 @@ The body is subdivided across one cycle, and a vector subdivides further:
 That single spelling rule is why `(cyc bb4 a4)` means two alternating notes
 while `(rev riff)` still resolves `riff` — inside the same form, with no
 unquote operator.
+
+Keywords name drums rather than pitches, because percussion numbers are a
+lookup table and not a scale — 36 is a kick because General MIDI says so. A
+drum event carries `{:drum :bd}`, and a *kit* turns that into a note:
+
+```clojure
+(def beat (notes :bd _ :sn [:hh :hh]))
+(play! :drums #'beat)                  ; gm kit, channel 10
+(play! :drums #'beat {:kit r909})      ; or your own
+
+(def r909 {:bd 36 :sn 40 :rim {:note 37 :vel 0.5}})
+```
+
+A kit value that is a number means `{:note n}`; a map is merged whole, so a
+kit can set velocity or channel per drum. The event's own keys win over the
+kit's, and an inner `(kit r909 …)` wins over the voice's default.
+
+A `notes` body is note-literal notation all the way down, nested forms
+included: `(notes (arp :up p))` reads `:up` as a drum, exactly as
+`(notes (fast 2 c4))` reads `2` as a note. Transforms wrap a `notes` form
+from outside — `(arp :up (notes …))`.
 
 ## The algebra
 
@@ -347,7 +372,7 @@ One failing voice cannot affect its neighbours or the clock.
 
 ## Architecture
 
-Twelve namespaces in a strict downward dependency chain. `mu.time`,
+Thirteen namespaces in a strict downward dependency chain. `mu.time`,
 `mu.pattern`, `mu.transform`, `mu.grammar` and `mu.harmony` are pure and
 total, so the whole music algebra is testable with no clock, no device, and no
 threads.
@@ -360,6 +385,7 @@ threads.
 | `src/mu/grammar.clj` | generative grammars: rules that grow a pattern |
 | `src/mu/pitch.clj` | spelled pitch: the shape, its one reader, interval transposition |
 | `src/mu/harmony.clj` | modes, degrees to MIDI, diatonic stacks |
+| `src/mu/kit.clj` | drum names and the kits that resolve them to notes |
 | `src/mu/notation.clj` | the `notes` macro and note-literal grammar |
 | `src/mu/midi.clj` | `MidiSink` protocol, encoding, recording + javax sinks |
 | `src/mu/render.clj` | pure cycle rendering: patterns in, a sorted schedule out |

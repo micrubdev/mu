@@ -27,6 +27,7 @@ the exclude. (`every?` is core; `every` is not.)
 - [Signals](#signals) — `sine`, `saw`, `tri`, `rand`
 - [Values](#values) — `fmap`, `with`
 - [Harmony](#harmony) — `scale`, `chord`, `arp`, `transpose`
+- [Percussion](#percussion) — `kit`, `gm`
 - [Performance](#performance) — `play!`, `mute`, `begin!`, transport
 - [Web view](#web-view) — `web!`
 - [Index](#index)
@@ -455,6 +456,81 @@ The second is the drift case — the carried E♭3 does not sound as 63, so it i
 ignored and a plain spelling used. Defaults are **flats**, matching mu's own
 note names: it writes `eb2`, never `d#2`.
 
+## Percussion
+
+A keyword in a `notes` body is a drum name, carried as `{:drum :bd}`. It is
+not a pitch: percussion note numbers are a lookup table, not a scale, and
+transposing a drum part up a fifth is meaningless. A *kit* resolves the name
+to a number.
+
+### `kit`
+
+`[k p]`
+
+Resolve `p`'s drum names against kit `k`.
+
+```clojure
+(query (kit gm (notes :bd :sn)) [0 1])
+;;=> {:chan 9, :note 36, :drum :bd}
+;;   {:chan 9, :note 38, :drum :sn}
+```
+
+A kit is a plain map from drum name to either a MIDI number — shorthand for
+`{:note n}` — or an event fragment merged whole:
+
+```clojure
+(def r909 {:bd 36
+           :sn 40
+           :rim {:note 37 :vel 0.5}})
+```
+
+Precedence runs channel default, then kit entry, then the event's own keys,
+so a `:vel` you set with `with` or `fmap` survives a kit that ghosts that
+drum. `:chan 9` is the default because a drum name means percussion, and
+channel 10 is what percussion means in MIDI; a sampler kit sets `:chan` per
+entry to say otherwise.
+
+An event that already has a `:note` is left alone. `kit` is therefore
+idempotent, and an inner kit wins:
+
+```clojure
+(def beat (kit r909 (notes :bd _ :sn)))
+(play! :drums #'beat)              ; r909, not the voice's default
+```
+
+`kit` is a no-op on pitched patterns, which is why `play!` can apply one to
+every voice. An unknown drum name throws; `safe-render` catches it, replays
+the last good cycle, and the web HUD shows the error, so a typo mid-set
+costs you the edit and not the performance.
+
+### `gm`
+
+The General MIDI percussion map: notes 35–81 under descriptive names —
+`:bass-drum`, `:acoustic-snare`, `:closed-hihat`, `:low-mid-tom`, `:crash`,
+`:cabasa`, … — plus the short aliases:
+
+| Alias | Name | Note |
+|---|---|---|
+| `:bd` | `:bass-drum` | 36 |
+| `:bd2` | `:acoustic-bass-drum` | 35 |
+| `:sn` | `:acoustic-snare` | 38 |
+| `:sn2` | `:electric-snare` | 40 |
+| `:rim` | `:side-stick` | 37 |
+| `:cp` | `:hand-clap` | 39 |
+| `:hh` | `:closed-hihat` | 42 |
+| `:ph` | `:pedal-hihat` | 44 |
+| `:oh` | `:open-hihat` | 46 |
+| `:lt` | `:low-floor-tom` | 41 |
+| `:ft` | `:high-floor-tom` | 43 |
+| `:mt` | `:low-mid-tom` | 47 |
+| `:ht` | `:hi-mid-tom` | 48 |
+| `:cr` | `:crash` | 49 |
+| `:rd` | `:ride` | 51 |
+| `:tb` | `:tambourine` | 54 |
+| `:cb` | `:cowbell` | 56 |
+
+`gm` is the kit `play!` uses when a voice gives no `:kit`.
+
 ## Performance
 
 Voices hold **vars**, not pattern values, and the render thread derefs every
@@ -527,8 +603,10 @@ interface.
 | `fast` | `[n p]` |
 | `fastcat` | `[& ps]` |
 | `fmap` | `[f p]` |
+| `gm` | value (a map) |
 | `hush` | `[]` |
 | `iter` | `[n p]` |
+| `kit` | `[k p]` |
 | `late` | `[n p]` |
 | `lsys` | `[rules axiom n]` |
 | `mute` | `[k]` |
