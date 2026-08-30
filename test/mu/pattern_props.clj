@@ -5,6 +5,7 @@
             [clojure.test.check.properties :as prop]
             [mu.pattern :as p]
             [mu.grammar :as g]
+            [mu.kit :as kit]
             [mu.transform :as x]))
 
 ;; ---- generators -------------------------------------------------------
@@ -33,8 +34,17 @@
             (gen/vector-distinct (gen/choose 48 72) {:min-elements 2
                                                      :max-elements 4})))
 
+(def gen-drum-leaf
+  "An event carrying a drum NAME and no :note -- what `notes` emits for
+  a keyword, and the only thing `kit` acts on. Without this in the
+  generator `kit` would no-op on every pattern the laws build and would
+  be exercised by nothing. Drum leaves carry no :note, so `arp` passes
+  them straight through, which is correct."
+  (gen/fmap (fn [d] (p/pure {:drum d}))
+            (gen/elements [:bd :sn :hh :oh])))
+
 (def gen-leaf
-  (gen/one-of [gen-pure-leaf gen-lifted-leaf gen-chord-leaf]))
+  (gen/one-of [gen-pure-leaf gen-lifted-leaf gen-chord-leaf gen-drum-leaf]))
 
 (def gen-pattern
   (gen/recursive-gen
@@ -57,6 +67,7 @@
                    (gen/tuple (gen/choose 0 4) inner))
          (gen/fmap (fn [[n t q]] (x/stut n 0.5 t q))
                    (gen/tuple (gen/choose 1 3) (gen/elements [1/4 1/3]) inner))
+         (gen/fmap #(kit/kit kit/gm %) inner)
          ;; small generation counts only -- the point is that whatever
          ;; lsys produces obeys the laws, not that it produces a lot
          (gen/fmap (fn [[n q]] (p/stack (g/lsys {0 [0 1] 1 [0]} [0] n) q))
