@@ -34,8 +34,11 @@
 
 (def boots
   "A four-bar phrase: three bars of stomping, then half a bar of it with
-  a tom spill on the back half."
-  (cyc stomp stomp stomp (sub stomp fill)))
+  a tom spill on the back half.
+
+  Held well under the melodic voices: a GM bass drum at full velocity
+  buries everything above it."
+  (with (cyc stomp stomp stomp (sub stomp fill)) :vel 0.5))
 
 (def ^:private full-stomp
   "What the boots become once the chorus starts -- the gap on beat two
@@ -51,8 +54,10 @@
   full of people rather than a machine."
   (degrade-by 0.25
               (stack (with (euclid 5 6 (notes :tb))
-                           :vel (sub 0.9 0.55 0.7 0.5 0.85 0.6))
-                     (late 1/6 (euclid 2 6 (notes :cb))))))
+                           :vel (sub 0.5 0.3 0.4 0.28 0.46 0.32))
+                     ;; The cowbell is the most piercing thing in the GM
+                     ;; kit; it marks the bar rather than competing.
+                     (with (late 1/6 (euclid 2 6 (notes :cb))) :vel 0.32))))
 
 (defn- octave-up
   "Up one octave, in DEGREES -- degree 7 is the octave, so this runs
@@ -66,17 +71,22 @@
   (chord 3 (slow 4 (notes 0 6 5 4))))
 
 (def organ
-  "Block chords, broken into a rolling arpeggio on alternate bars, with
-  an octave doubling on top the way an organ stop doubles."
+  "Block chords, broken into a rolling arpeggio on alternate bars.
+
+  It used to carry an octave stop as well. Six notes to a chord left no
+  room for the chorus above it, and the chant is the voice that wants
+  the octaves -- so the organ gives them up and sits underneath."
   (scale :aeolian :d3
-         (superimpose octave-up (every 2 #(arp :up %) progression))))
+         (with (every 2 #(arp :up %) progression) :vel 0.5)))
 
 (def chant
   "The roaring chorus: one low modal line, doubled at the octave, two
   bars long."
   (scale :aeolian :d2
-         (superimpose octave-up
-                      (slow 2 (notes 0 2 3 4 _ 4 3 2)))))
+         (with (superimpose octave-up (slow 2 (notes 0 2 3 4 _ 4 3 2)))
+               ;; Choir aahs is a soft patch and this is the tune; it
+               ;; needs to sit on top of everything else.
+               :vel 0.8)))
 
 (def ^:private binaric
   "The machine's own grammar. Three symbols, so the chatter has three
@@ -87,8 +97,8 @@
   "Binaric chatter over a pentatonic, thinned so it reads as signal
   traffic rather than a melody."
   (scale :minor-pent :d5
-         (with (degrade-by 0.3 (fast 2 (lsys binaric [0] 5)))
-               :vel 0.45)))
+         (with (degrade-by 0.15 (fast 2 (lsys binaric [0] 5)))
+               :vel 0.4)))
 
 ;; ---- patches -----------------------------------------------------------
 
@@ -125,16 +135,19 @@
              ;; would just retype the `def`.
              (alter-var-root #'boots (constantly full-stomp)))}
 
-   {:name "Binaric breakdown"  :bars 8
+   ;; The organ drops but the chant does not: muting both left the
+   ;; breakdown with nothing sustained under the chatter, and it sagged.
+   {:name "Binaric breakdown"  :bars 6
     :enter (fn []
              (mute :organ)
-             (mute :chant)
              (play! :beeps #'beeps {:chan 2}))}
 
-   {:name "All hands"          :bars 8 :bpm 144
-    :enter (fn [] (unmute :organ) (unmute :chant))}
+   {:name "All hands"          :bars 8 :bpm 152
+    :enter (fn [] (unmute :organ))}
 
-   {:name "Powering down"      :bars 4 :bpm 120
+   ;; Six bars and a bigger tempo drop, so it winds down rather than
+   ;; stopping.
+   {:name "Powering down"      :bars 6 :bpm 112
     :enter (fn [] (mute :beeps) (mute :organ))}])
 
 ;; ---- running it --------------------------------------------------------
