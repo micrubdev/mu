@@ -1,5 +1,6 @@
 (ns mu.player-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [mu.clock :as clk]
             [mu.midi :as m]
             [mu.notation :refer [notes]]
             [mu.pattern :as p]
@@ -84,3 +85,28 @@
     (with-redefs [beat-under-test (notes :sn)]
       (is (= [{:drum :sn :note 38 :chan 9}]
              (map :value (p/query (:pattern (:d (pl/current-voices))) [0 1])))))))
+
+;; ---- program change and CC ---------------------------------------------
+
+(deftest program-and-cc-are-noops-with-no-transport
+  (testing "like `panic`, they do nothing rather than throw when stopped"
+    (is (= 18 (pl/program! 0 18)))
+    (is (= 64 (pl/cc! 0 74 64)))))
+
+(deftest program-and-cc-reach-the-sink
+  (let [sink  (m/recording-sink)
+        trans (clk/start! {:sink sink :voices-fn (constantly {}) :bpm 600})]
+    (try
+      ;; Install it the way `begin!` would. Reaching the private atom
+      ;; beats widening the public API for a test's convenience.
+      (reset! @#'pl/!transport trans)
+      (pl/program! 0 18)
+      (pl/cc! 3 74 64)
+      (let [specs (map :spec (m/log sink))]
+        (is (some #{{:type :program :chan 0 :program 18}} specs)
+            "the program change was sent")
+        (is (some #{{:type :cc :chan 3 :cc 74 :val 64}} specs)
+            "the control change was sent"))
+      (finally
+        (reset! @#'pl/!transport nil)
+        (clk/stop! trans)))))

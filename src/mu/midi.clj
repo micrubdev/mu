@@ -81,12 +81,15 @@
 
 (defrecord JavaxSink [^MidiDevice device ^Receiver receiver]
   MidiSink
-  (encode [_ {:keys [type chan note vel cc val]}]
+  (encode [_ {:keys [type chan note vel cc val program]}]
     (let [ch (int (or chan 0))]
       (case type
         :note-on  (short-message ShortMessage/NOTE_ON  ch note (vel->midi vel))
         :note-off (short-message ShortMessage/NOTE_OFF ch note 0)
         :cc       (short-message ShortMessage/CONTROL_CHANGE ch cc val)
+        ;; A program change carries ONE data byte; the second is ignored
+        ;; and the encoded message is two bytes long, not three.
+        :program  (short-message ShortMessage/PROGRAM_CHANGE ch program 0)
         (throw (IllegalArgumentException. (str "unknown message type: " type))))))
 
   (emit! [_ encoded _at-nanos]
@@ -99,6 +102,18 @@
     (.close receiver)
     (.close device)
     nil))
+
+(defn send-now!
+  "Encode `spec` and emit it immediately.
+
+  For messages that are not part of a rendered cycle -- a program
+  change, a control change typed at the REPL -- where there is no
+  schedule to place them on and `System/nanoTime` is the only sensible
+  instant. The render path does NOT go through here: it encodes ahead
+  of time so the dispatch thread never allocates."
+  [sink spec]
+  (emit! sink (encode sink spec) (System/nanoTime))
+  nil)
 
 (defn open-sink!
   "Open a MIDI output by case-insensitive substring match on its name.

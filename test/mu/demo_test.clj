@@ -100,6 +100,23 @@
       (is (= (map #(+ 12 %) plain) doubled)
           "the doubling is not one octave above the line it doubles"))))
 
+;; ---- patches ------------------------------------------------------------
+
+(deftest patches-are-legal-and-cover-the-melodic-channels
+  (testing "every entry is a real channel and a real GM program"
+    (doseq [[ch prog] demo/patches]
+      (is (<= 0 ch 15) (str "channel " ch " is not a MIDI channel"))
+      (is (<= 0 prog 127) (str "program " prog " is not a GM program"))
+      (is (not= 9 ch) "channel 9 is percussion and takes no patch")))
+  (testing "the melodic channels the arrangement plays on all get one"
+    (doseq [{:keys [enter]} demo/sections] (enter))
+    (let [chans (->> (vals (pl/voices))
+                     (map #(:chan % 0))
+                     (remove #{9})
+                     set)]
+      (is (= chans (set (keys demo/patches)))
+          "a voice plays on a channel with no patch, or a patch has no voice"))))
+
 ;; ---- the arrangement ---------------------------------------------------
 
 (deftest sections-are-well-formed

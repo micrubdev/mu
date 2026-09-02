@@ -15,11 +15,10 @@
   D aeolian, 132 bpm. A cycle is a bar; the parts divide it in six for
   the compound lurch a drinking song wants.
 
-  TIMBRE. `mu.midi` speaks note-on, note-off and CC -- there is no
-  program change -- so on Gervill every melodic channel is a grand
-  piano and the organ will not sound like an organ. The structure is
-  what this demonstrates. Point it at a synth that is already set up
-  (`clojure -M:demo \"IAC\"`) to hear it as written."
+  TIMBRE. The melodic channels set their own GM patches with
+  `program!` before the first bar, so this sounds as written on any
+  General MIDI device, Gervill included. A synth that ignores program
+  change will play it all on whatever it is already set to."
   (:refer-clojure :exclude [rand])
   (:require [mu.live :refer :all]))
 
@@ -91,6 +90,17 @@
          (with (degrade-by 0.3 (fast 2 (lsys binaric [0] 5)))
                :vel 0.45)))
 
+;; ---- patches -----------------------------------------------------------
+
+(def patches
+  "GM programs for the three melodic channels; 9 is percussion and
+  needs none. A patch is a mode the channel is in rather than an event
+  in a pattern, which is why these are sent once by `play-through!` and
+  do not appear in any pattern above."
+  {0 18    ; rock organ
+   1 52    ; choir aahs -- the shipboard chorus
+   2 80})  ; square lead -- the machine beeps
+
 ;; ---- the arrangement ---------------------------------------------------
 
 (def sections
@@ -142,6 +152,7 @@
   [port]
   (println "\nmu -- a forge-tavern stomp. D aeolian.\n")
   (begin! {:port port :bpm 132})
+  (doseq [[ch prog] patches] (program! ch prog))
   (loop [[{:keys [name bars enter] :as sect} & more] sections
          tempo 132]
     (if-not sect

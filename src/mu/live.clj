@@ -59,6 +59,7 @@
   mu.player/mute      mu.player/unmute
   mu.player/solo      mu.player/unsolo
   mu.player/begin!    mu.player/end!     mu.player/bpm
+  mu.player/program!  mu.player/cc!
   mu.player/voices)
 
 (defn web!

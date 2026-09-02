@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 220 Clojure tests / 985 assertions, 0 failures
+- 225 Clojure tests / 1005 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -90,10 +90,9 @@ the same mechanism as retyping a `def` in a jam buffer: voices hold vars,
 the render thread derefs once per cycle, and the change lands on the next
 cycle edge.
 
-`mu.midi` speaks note-on, note-off and CC — there is no program change —
-so on Gervill every melodic channel is a grand piano and the organ will
-not sound like an organ. Point the demo at a synth that is already set up
-if you want it as written.
+The three melodic channels set their own GM patches with `program!`
+before the first bar, so it sounds as written on any General MIDI
+device, Gervill included.
 
 ## Web view
 

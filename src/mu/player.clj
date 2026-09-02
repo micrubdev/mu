@@ -135,6 +135,30 @@
     (reset! !transport nil))
   :stopped)
 
+(defn program!
+  "Put channel `ch` on GM program `n` (0-127), now.
+
+  `mu.midi` has no program change on the render path on purpose: a
+  patch is a mode the channel is in, not an event in a pattern, and
+  making it pattern data would mean tracking a last-program per channel
+  on a render path that is deliberately pure. Set it once, from here.
+
+  A no-op when the transport is stopped, like `panic`."
+  [ch n]
+  (when-not (<= 0 n 127)
+    (throw (IllegalArgumentException. (str "program must be 0-127, got " n))))
+  (when-let [t @!transport] (midi/send-now! (:sink t) {:type :program :chan ch :program n}))
+  n)
+
+(defn cc!
+  "Send control change `n` (0-127) with value `v` (0-127) on channel
+  `ch`, now. A no-op when the transport is stopped."
+  [ch n v]
+  (when-not (and (<= 0 n 127) (<= 0 v 127))
+    (throw (IllegalArgumentException. (str "cc and value must be 0-127, got " n " " v))))
+  (when-let [t @!transport] (midi/send-now! (:sink t) {:type :cc :chan ch :cc n :val v}))
+  v)
+
 (defn bpm [n]
   (when-let [t @!transport] (clk/set-bpm! t n))
   n)
