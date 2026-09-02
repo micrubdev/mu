@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 225 Clojure tests / 1005 assertions, 0 failures
+- 226 Clojure tests / 1007 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)

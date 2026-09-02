@@ -32,21 +32,30 @@
   "Boots coming down the ladder."
   (notes :ht :mt :ft :lt))
 
+(def ^:private boot-level
+  "One number for both boots patterns, because they replace one another
+  mid-piece. When only `boots` carried a velocity, the swap at the
+  chorus took it away and the drums jumped from a mean of 59 to 74 --
+  louder for the whole back half, at exactly the moment the chant most
+  needs the room. A shared constant is the fix that cannot drift."
+  0.58)
+
 (def boots
   "A four-bar phrase: three bars of stomping, then half a bar of it with
   a tom spill on the back half.
 
   Held well under the melodic voices: a GM bass drum at full velocity
   buries everything above it."
-  (with (cyc stomp stomp stomp (sub stomp fill)) :vel 0.5))
+  (with (cyc stomp stomp stomp (sub stomp fill)) :vel boot-level))
 
 (def ^:private full-stomp
   "What the boots become once the chorus starts -- the gap on beat two
   fills in and the phrase ends on a floor tom."
-  (cyc (notes :bd _ :bd :bd _ :ft)
-       (notes :bd _ :bd :bd _ :ft)
-       (notes :bd _ :bd :bd _ :ft)
-       (sub (notes :bd _ :bd :bd _ :ft) fill)))
+  (with (cyc (notes :bd _ :bd :bd _ :ft)
+             (notes :bd _ :bd :bd _ :ft)
+             (notes :bd _ :bd :bd _ :ft)
+             (sub (notes :bd _ :bd :bd _ :ft) fill))
+        :vel boot-level))
 
 (def tankards
   "Tankards struck on the table: five in six, accented by a velocity
@@ -74,10 +83,15 @@
   "Block chords, broken into a rolling arpeggio on alternate bars.
 
   It used to carry an octave stop as well. Six notes to a chord left no
-  room for the chorus above it, and the chant is the voice that wants
-  the octaves -- so the organ gives them up and sits underneath."
-  (scale :aeolian :d3
-         (with (every 2 #(arp :up %) progression) :vel 0.5)))
+  room for the chorus, so the organ gives the octaves up -- the chant is
+  the voice that wants them.
+
+  Rooted at d4 rather than d3. At d3 it ran 50-67 while the chant's
+  doubled upper voice ran to 57, and the two shared pitches 50, 53 and
+  57 outright: two sustained voices on the same notes in the same
+  octave, which is mud no velocity can fix. An octave up clears it."
+  (scale :aeolian :d4
+         (with (every 2 #(arp :up %) progression) :vel 0.55)))
 
 (def chant
   "The roaring chorus: one low modal line, doubled at the octave, two
@@ -96,7 +110,9 @@
 (def beeps
   "Binaric chatter over a pentatonic, thinned so it reads as signal
   traffic rather than a melody."
-  (scale :minor-pent :d5
+  ;; d6, not d5: the organ's new top reaches 79 and the chatter used to
+  ;; sit at 74-79, right on it. Up here it is unmistakably a machine.
+  (scale :minor-pent :d6
          (with (degrade-by 0.15 (fast 2 (lsys binaric [0] 5)))
                :vel 0.4)))
 

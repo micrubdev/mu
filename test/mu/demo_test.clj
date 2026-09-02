@@ -100,6 +100,14 @@
       (is (= (map #(+ 12 %) plain) doubled)
           "the doubling is not one octave above the line it doubles"))))
 
+(deftest the-boots-keep-their-level-across-the-swap
+  (testing "boots and full-stomp replace one another mid-piece, so a
+            velocity on one and not the other is the drums lurching
+            louder at the chorus"
+    (let [vels (fn [pat] (set (map :vel (over-eight-cycles pat))))]
+      (is (= (vels demo/boots) (vels @#'demo/full-stomp)))
+      (is (every? some? (vels demo/boots)) "the boots carry a velocity at all"))))
+
 ;; ---- patches ------------------------------------------------------------
 
 (deftest patches-are-legal-and-cover-the-melodic-channels
