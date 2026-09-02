@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 218 Clojure tests / 904 assertions, 0 failures
+- 220 Clojure tests / 985 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -69,6 +69,31 @@ the `:refer-clojure :exclude`. (`every?` is core; `every` is not.)
 `(mu.midi/list-ports)` shows what this JVM can see. On a machine with no
 ALSA or CoreMIDI that is just `Gervill` and `Real Time Sequencer` — an
 environment fact, not an error.
+
+## Demo
+
+```
+clojure -M:demo              # first available port
+clojure -M:demo "IAC"        # a port matched by substring
+```
+
+A one-shot piece — a forge-tavern stomp in D aeolian — that plays itself
+through seven sections and stops. It exists to be heard without learning
+anything first, and to exercise the vocabulary in one place: `kit` drum
+names, `euclid` with a velocity pattern running at its own rate, `scale`
+and `chord` over a modal progression, `arp` on alternate bars, and `lsys`
+driving the machine chatter. `dev/mu/demo.clj` is meant to be read while
+it plays.
+
+Section four redefines a pattern mid-piece with `alter-var-root`, which is
+the same mechanism as retyping a `def` in a jam buffer: voices hold vars,
+the render thread derefs once per cycle, and the change lands on the next
+cycle edge.
+
+`mu.midi` speaks note-on, note-off and CC — there is no program change —
+so on Gervill every melodic channel is a grand piano and the organ will
+not sound like an organ. Point the demo at a synth that is already set up
+if you want it as written.
 
 ## Web view
 
