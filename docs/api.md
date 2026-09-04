@@ -548,6 +548,9 @@ redefinition lands in time with no transition machinery.
 (bpm 140)          ; applies at the next cycle boundary
 (voices)           ; what is registered
 
+(program! 0 18)    ; channel 0 onto a GM patch, now
+(cc! 0 74 64)      ; a control change, now
+
 (mute :bass) (unmute :bass)
 (solo :bass) (unsolo)
 (stop-voice! :bass)
@@ -556,6 +559,14 @@ redefinition lands in time with no transition machinery.
 (panic)            ; all-notes-off everywhere, voices left registered
 (end!)             ; stop the transport and close the port
 ```
+
+`program!` and `cc!` send immediately rather than joining the schedule.
+A patch is a mode a channel is in, not an event in a pattern: putting it
+in pattern data would mean tracking a last-program per channel on a
+render path that is pure by design, and re-sending it every cycle
+otherwise. Set it once. Both are no-ops when the transport is stopped,
+like `panic`, and both throw on a value outside 0-127 rather than
+clamping — a clamped patch number is a typo you never find.
 
 Passing a bare pattern instead of a var registers a **snapshot** that will not
 update when you redefine it. Prefer `#'bass`.
@@ -591,6 +602,7 @@ interface.
 | `arp` | `[mode p]` |
 | `begin!` | `[]` `[{:keys [port bpm]}]` |
 | `bpm` | `[n]` |
+| `cc!` | `[ch n v]` |
 | `chord` | `[p]` `[size p]` |
 | `cyc` | alias of `slowcat` |
 | `degrade` | `[p]` |
@@ -615,6 +627,7 @@ interface.
 | `off` | `[t f p]` |
 | `panic` | `[]` |
 | `play!` | `[x]` `[k x]` `[k x opts]` |
+| `program!` | `[ch n]` |
 | `pure` | `[v]` |
 | `query` | `[p span]` |
 | `rand` | signal |

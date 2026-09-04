@@ -72,6 +72,12 @@
       (testing "a 0.0-1.0 velocity is scaled into the byte"
         (is (= (byte 127) (nth (bytes-of {:type :note-on :chan 0 :note 60 :vel 1.0}) 2)))
         (is (= (byte 64)  (nth (bytes-of {:type :note-on :chan 0 :note 60 :vel 0.5}) 2))))
+      (testing "program change is two bytes -- it carries no second data byte"
+        (is (= [(unchecked-byte 0xC0) (byte 18)]
+               (bytes-of {:type :program :chan 0 :program 18}))))
+      (testing "program change puts the channel in the low nibble too"
+        (is (= [(unchecked-byte 0xC5) (byte 18)]
+               (bytes-of {:type :program :chan 5 :program 18}))))
       (testing "an unknown type is rejected rather than silently dropped"
         (is (thrown? IllegalArgumentException (bytes-of {:type :nonsense :chan 0}))))
       (finally (m/close-sink! sink)))))
@@ -87,3 +93,36 @@
         (is (nil? (m/emit! sink on  (System/nanoTime))))
         (is (nil? (m/emit! sink off (System/nanoTime)))))
       (finally (m/close-sink! sink)))))
+
+(deftest send-now-encodes-and-emits-in-one-step
+  ;; A recording sink needs no audio line, so unlike the byte-level tests
+  ;; above this one runs on a headless machine.
+  (let [sink (m/recording-sink)]
+    (m/send-now! sink {:type :program :chan 2 :program 80})
+    (m/send-now! sink {:type :cc :chan 2 :cc 74 :val 64})
+    (is (= [{:type :program :chan 2 :program 80}
+            {:type :cc :chan 2 :cc 74 :val 64}]
+           (map :spec (m/log sink)))
+        "both messages reached the sink, in order")
+    (is (every? some? (map :at (m/log sink)))
+        "each carries an emission time")))
+
+(deftest program-change-bytes-without-a-device
+  ;; `JavaxSink/encode` is pure -- it builds a ShortMessage and never
+  ;; touches the receiver -- so the byte layout can be asserted on a
+  ;; machine with no audio line, unlike the round-trip test above.
+  (let [sink     (m/->JavaxSink nil nil)
+        bytes-of (fn [spec] (vec (.getMessage ^javax.sound.midi.MidiMessage
+                                              (m/encode sink spec))))]
+    (testing "two bytes: status|channel, then the program"
+      (is (= [(unchecked-byte 0xC0) (byte 18)]
+             (bytes-of {:type :program :chan 0 :program 18}))))
+    (testing "the channel sits in the low nibble"
+      (is (= [(unchecked-byte 0xC5) (byte 18)]
+             (bytes-of {:type :program :chan 5 :program 18}))))
+    (testing "program 0 is a legal patch, not a missing one"
+      (is (= [(unchecked-byte 0xC9) (byte 0)]
+             (bytes-of {:type :program :chan 9 :program 0}))))
+    (testing "a control change is still three bytes"
+      (is (= [(unchecked-byte 0xB0) (byte 123) (byte 0)]
+             (bytes-of {:type :cc :chan 0 :cc 123 :val 0}))))))

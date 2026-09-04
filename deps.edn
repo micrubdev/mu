@@ -25,6 +25,13 @@
    :jvm-opts    ["-XX:+UseZGC" "-XX:+ZGenerational" "-XX:+AlwaysPreTouch"]
    :main-opts   ["-m" "nrepl.cmdline" "--interactive"]}
 
+  ;; The demo piece. Same collector as :live -- it runs the real clock,
+  ;; so a G1 run would be measuring a defect.
+  :demo
+  {:extra-paths ["dev"]
+   :jvm-opts    ["-XX:+UseZGC" "-XX:+ZGenerational" "-XX:+AlwaysPreTouch"]
+   :main-opts   ["-m" "mu.demo"]}
+
   ;; The web view. Its dependencies live here, not in :deps -- src/ stays
   ;; loadable with nothing but Clojure on the classpath.
   :web

@@ -7,6 +7,30 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Program change
+
+- `mu.midi/encode` gained `:program`. It is a two-byte message — status
+  and the program number, no second data byte — which is why the
+  encoding test asserts a length of two.
+- `mu.midi/send-now!` encodes and emits in one step, for messages with
+  no schedule to sit on. The render path still encodes ahead of time so
+  the dispatch thread never allocates.
+- `program!` and `cc!` in `mu.player`, re-exported from `mu.live`. `:cc`
+  had been reachable only by `mu.clock`'s all-notes-off panic since it
+  was written; this is the first way to send one by hand.
+- Deliberately not pattern data. A patch is a mode a channel is in, not
+  an event: carrying it per-event would mean a last-program-per-channel
+  table on a render path that is pure by design. Both throw outside
+  0–127 rather than clamping, because a clamped patch number is a typo
+  you never find.
+
+### Demo
+
+- `dev/mu/demo.clj` and the `:demo` alias — a one-shot piece that plays
+  itself through seven sections and stops, exercising the vocabulary in
+  one readable place. It sets its own patches, so it sounds as written
+  on any General MIDI device.
+
 ### Pitch spelling
 
 - `mu.pitch` — the spell shape (`{:step :e :alter -1 :octave 3}`), `spelled`,
