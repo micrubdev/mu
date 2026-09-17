@@ -319,3 +319,69 @@
   cycle. `modw`, not `mod`, which is core's modulo."
   [rate sig]
   (p/with (p/fast rate (p/pure {})) :mod sig))
+
+;; ---- song form ------------------------------------------------------------
+
+(defn song
+  "Sections in order, each played for a number of cycles, then round
+  again:
+
+    (song [:verse 8 verse] [:chorus 4 chorus] [:verse 8 verse])
+
+  is twenty cycles long and loops. Each section sees its own cycle
+  count from zero -- `every` inside the chorus counts chorus cycles, the
+  same reasoning as `slowcat`'s offset -- and a section is any pattern,
+  so a section can be a `song`: that is textbeat's callstack. The
+  section table is kept on the pattern's metadata for `section-at`."
+  [& sections]
+  (when (empty? sections)
+    (throw (ex-info "mu: song needs at least one [label cycles pattern] section" {})))
+  (doseq [[label n _ :as sec] sections]
+    (when-not (and (= 3 (count sec)) (integer? n) (pos? n))
+      (throw (ex-info (str "mu: bad song section " (pr-str sec)
+                           " -- want [label positive-cycles pattern]")
+                      {:section sec :label label}))))
+  (let [starts (vec (reductions + 0 (map second sections)))
+        total  (peek starts)
+        ;; The section containing cycle c and c's offset into it.
+        locate (fn [c]
+                 (let [cm (mod c total)
+                       i  (dec (count (take-while #(<= % cm) starts)))]
+                   [i (- cm (nth starts i))]))]
+    (with-meta
+      (p/pat (fn [sp]
+               (mapcat
+                 (fn [[b e]]
+                   (let [c       (t/floor-cycle b)
+                         [i off] (locate c)
+                         pat     (nth (nth sections i) 2)
+                         ;; Shift so the section sees cycle `off`: query
+                         ;; it at (c - shift) and move the results back.
+                         shift   (- c off)]
+                     (p/query (p/late shift pat) [b e])))
+                 (t/split-cycles sp))))
+      {::sections (mapv (fn [[label n _]] [label n]) sections)
+       ::locate   locate
+       ::length   total})))
+
+(defn song-length
+  "How many cycles a `song` runs before it repeats."
+  [s]
+  (::length (meta s)))
+
+(defn section-at
+  "Which section of a `song` is playing at cycle `c`, as
+  [label cycle-within-section]."
+  [s c]
+  (let [{::keys [sections locate]} (meta s)
+        [i off] (locate c)]
+    [(first (nth sections i)) off]))
+
+(defn once
+  "Play `p` on cycle 0 and nothing after -- a one-shot, textbeat's
+  non-looping playback. Under `late` it fires on the cycle you say."
+  [p]
+  (p/pat (fn [sp]
+           (mapcat (fn [[b e :as piece]]
+                     (when (zero? (t/floor-cycle b)) (p/query p piece)))
+                   (t/split-cycles sp)))))

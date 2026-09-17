@@ -248,3 +248,41 @@
     (is (= [60 40] (map (comp :note :value) (onsets w 0))) "cycle 0: first of each stack, in place")
     (is (= [64 40] (map (comp :note :value) (onsets w 1))))
     (is (= [[0 1/2] [1/2 1]] (map :whole (onsets w 0))) "the melody's own rhythm is kept")))
+
+;; ---- song form -------------------------------------------------------------
+
+(deftest song-plays-sections-for-their-counts-then-loops
+  (let [s (x/song [:a 2 (p/pure :a)] [:b 1 (p/pure :b)])]
+    (is (= [[:a] [:a] [:b] [:a] [:a] [:b] [:a]]
+           (map #(vals-at s %) (range 7))))))
+
+(deftest section-at-names-the-section-and-its-own-cycle
+  (let [s (x/song [:a 2 (p/pure :a)] [:b 1 (p/pure :b)])]
+    (is (= [[:a 0] [:a 1] [:b 0] [:a 0]] (map #(x/section-at s %) (range 4))))
+    (is (= 3 (x/song-length s)))))
+
+(deftest sections-count-their-own-cycles
+  (let [s (x/song [:a 3 (x/every 3 (partial p/fast 2) (p/pure :a))]
+                  [:b 1 (p/pure :b)])]
+    (is (= [:a :a] (vals-at s 0)) "every fires on the section's first cycle")
+    (is (= [:a]    (vals-at s 1)))
+    (is (= [:a :a] (vals-at s 4)) "and again on the section's first cycle next time round")))
+
+(deftest songs-nest
+  (let [inner (x/song [:x 1 (p/pure :x)] [:y 1 (p/pure :y)])
+        outer (x/song [:in 2 inner] [:z 1 (p/pure :z)])]
+    (is (= [[:x] [:y] [:z] [:x]] (map #(vals-at outer %) (range 4))))))
+
+(deftest a-song-keeps-rhythm-inside-a-cycle
+  (let [s (x/song [:a 1 (p/sub (p/pure :a) (p/pure :b))])]
+    (is (= [:a :b] (vals-at s 5)))))
+
+(deftest once-plays-cycle-zero-only
+  (let [o (x/once (p/pure :a))]
+    (is (= [:a] (vals-at o 0)))
+    (is (= []   (vals-at o 1)))
+    (is (= []   (vals-at o 9)))))
+
+(deftest song-rejects-bad-sections
+  (is (thrown? clojure.lang.ExceptionInfo (x/song [:a 0 (p/pure :a)])))
+  (is (thrown? clojure.lang.ExceptionInfo (x/song))))

@@ -45,6 +45,8 @@
   mu.transform/euclid-full  mu.transform/arp
   mu.transform/strum  mu.transform/walk
   mu.transform/ctrl   mu.transform/bend  mu.transform/modw
+  mu.transform/song   mu.transform/section-at mu.transform/song-length
+  mu.transform/once
   mu.transform/iter   mu.transform/stut
   mu.pattern/fmap     mu.pattern/with
   ;; harmony
