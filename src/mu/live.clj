@@ -15,6 +15,7 @@
             [mu.pattern]
             [mu.pitch]
             [mu.player]
+            [mu.score]
             [mu.transform]))
 
 (defmacro ^:private import-vars
@@ -64,7 +65,9 @@
   mu.player/solo      mu.player/unsolo
   mu.player/begin!    mu.player/end!     mu.player/bpm
   mu.player/program!  mu.player/cc!
-  mu.player/voices)
+  mu.player/voices
+  ;; score
+  mu.score/load!      mu.score/watch!    mu.score/unwatch!)
 
 (defn web!
   "Start the browser view. Requires the :web alias -- mu's core carries

@@ -98,7 +98,7 @@
      :alter  (accidentals accs)
      :octave (Long/parseLong octave)}))
 
-(defn- literal
+(defn literal
   "The value map a symbol or keyword literal denotes, or nil when its
   spelling is not in the grammar. The suffix is stripped first, so the
   stem is matched by the same rules as before suffixes existed."
@@ -128,7 +128,7 @@
 
 (def ^:private degree-re #"^(n|[bs]*)([1-9]\d*)$")
 
-(defn- degree-literal
+(defn degree-literal
   "The value map a `deg` symbol denotes -- `b3`, `s4`, `bb7`, with the
   articulation suffixes -- or nil when it is not one. `b` flattens, `s`
   sharpens: `#` is the reader's dispatch character and cannot start a
@@ -141,7 +141,7 @@
              (when (and (seq accs) (not= accs "n")) {:alter (accidentals accs)})
              art))))
 
-(defn- degree->zero-based
+(defn degree->zero-based
   "Musicians count from one. Past seven the count keeps going -- 8 is the
   root an octave up -- and below one it goes negative: -1 is the degree
   under the root. Zero is not a degree."
@@ -160,6 +160,7 @@
                       `(p/pure ~v)
                       form)
     (integer? form) `(p/pure {:note ~(degree->zero-based form) :deg true})
+    (keyword? form) `(p/pure ~(literal form))
     (vector? form)  `(p/sub ~@(map rewrite-deg form))
     (seq? form)     (cons (first form) (map rewrite-deg (rest form)))
     :else           form))
