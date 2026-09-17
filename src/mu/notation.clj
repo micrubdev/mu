@@ -126,6 +126,53 @@
     (seq? form)    (cons (first form) (map rewrite (rest form)))
     :else          form))
 
+(def ^:private degree-re #"^(n|[bs]*)([1-9]\d*)$")
+
+(defn- degree-literal
+  "The value map a `deg` symbol denotes -- `b3`, `s4`, `bb7`, with the
+  articulation suffixes -- or nil when it is not one. `b` flattens, `s`
+  sharpens: `#` is the reader's dispatch character and cannot start a
+  symbol. `n` is the natural, there so a plain degree can take a suffix
+  -- `n1!` -- since `1!` is not a symbol the reader accepts."
+  [form]
+  (let [[stem art] (split-suffix (name form))]
+    (when-let [[_ accs digits] (re-matches degree-re stem)]
+      (merge {:note (dec (Long/parseLong digits)) :deg true}
+             (when (and (seq accs) (not= accs "n")) {:alter (accidentals accs)})
+             art))))
+
+(defn- degree->zero-based
+  "Musicians count from one. Past seven the count keeps going -- 8 is the
+  root an octave up -- and below one it goes negative: -1 is the degree
+  under the root. Zero is not a degree."
+  [n]
+  (cond
+    (pos? n) (dec n)
+    (neg? n) n
+    :else    (throw (ex-info "mu: 0 is not a scale degree; degrees count from 1" {}))))
+
+(defn- rewrite-deg
+  "`rewrite` for degree notation: numbers are 1-based scale degrees."
+  [form]
+  (cond
+    (= form '_)     `p/silence
+    (symbol? form)  (if-let [v (degree-literal form)]
+                      `(p/pure ~v)
+                      form)
+    (integer? form) `(p/pure {:note ~(degree->zero-based form) :deg true})
+    (vector? form)  `(p/sub ~@(map rewrite-deg form))
+    (seq? form)     (cons (first form) (map rewrite-deg (rest form)))
+    :else           form))
+
+(defmacro deg
+  "Build a pattern of scale DEGREES, counted from one the way musicians
+  do: `(deg 1 3 5 8)` is a root-position triad and the octave. Symbols
+  flatten or sharpen a degree -- `b3`, `s4` -- and take the same
+  articulation suffixes as `notes`. Events carry {:deg true} and, when
+  altered, :alter, for `mu.harmony/key` and `scale` to realise."
+  [& body]
+  `(p/sub ~@(map rewrite-deg body)))
+
 (defmacro notes
   "Build a pattern from note-literal notation. The body is subdivided
   across one cycle: `(notes c4 _ [eb4 g4])` is three equal steps, the

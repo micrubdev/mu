@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [mu.pattern :as p]
             [mu.pitch :as pitch]
-            [mu.notation :refer [notes note-name->midi note-name->spell]]))
+            [mu.notation :refer [notes deg note-name->midi note-name->spell]]))
 
 (defn- onset-values [pt cyc]
   (->> (p/query pt [cyc (inc cyc)])
@@ -140,3 +140,28 @@
 (deftest a-suffixed-non-note-symbol-is-not-a-note
   (is (nil? (note-name->midi 'riff!)))
   (is (nil? (note-name->midi 'h4!))))
+
+;; ---- degree notation ----------------------------------------------------
+
+(deftest deg-numbers-are-one-based
+  (is (= [{:note 0 :deg true} {:note 2 :deg true} {:note 4 :deg true}]
+         (map :value (sort-by (comp first :whole) (p/query (deg 1 3 5) [0 1]))))))
+
+(deftest deg-continues-past-seven-and-below-one
+  (is (= [7] (map (comp :note :value) (p/query (deg 8) [0 1]))) "8 is the root an octave up")
+  (is (= [-1] (map (comp :note :value) (p/query (deg -1) [0 1]))) "-1 is one degree below the root")
+  (is (= [-7] (map (comp :note :value) (p/query (deg -7) [0 1])))))
+
+(deftest deg-flats-and-sharps
+  (is (= [{:note 2 :deg true :alter -1}] (map :value (p/query (deg b3) [0 1]))))
+  (is (= [{:note 3 :deg true :alter 1}]  (map :value (p/query (deg s4) [0 1]))))
+  (is (= [{:note 6 :deg true :alter -2}] (map :value (p/query (deg bb7) [0 1])))))
+
+(deftest deg-takes-articulation-and-rests
+  (is (= [{:note 0 :deg true :vel 1.0} {:note 2 :deg true :alter -1 :legato true}]
+         (map :value (sort-by (comp first :whole) (p/query (deg n1! _ b3>) [0 1])))))
+  (is (= 2 (count (p/query (deg n1! _ b3>) [0 1])))))
+
+(deftest deg-nests-like-notes
+  (is (= [[0 1/2] [1/2 3/4] [3/4 1]]
+         (map :whole (sort-by (comp first :whole) (p/query (deg 1 [3 5]) [0 1]))))))

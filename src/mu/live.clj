@@ -2,12 +2,12 @@
   "The performance namespace. Open a jam buffer with:
 
     (ns jam
-      (:refer-clojure :exclude [rand])
+      (:refer-clojure :exclude [rand key])
       (:require [mu.live :refer :all]))
 
   Checked against clojure.core, the operator names here collide in
-  exactly one place: `rand`. (`every?` is core; `every` is not.)"
-  (:refer-clojure :exclude [rand])
+  two places: `rand` and `key`. (`every?` is core; `every` is not.)"
+  (:refer-clojure :exclude [rand key])
   (:require [mu.grammar]
             [mu.harmony]
             [mu.kit]
@@ -30,7 +30,7 @@
 
 (import-vars
   ;; notation
-  mu.notation/notes
+  mu.notation/notes    mu.notation/deg
   mu.notation/note-name->midi
   ;; algebra
   mu.pattern/silence  mu.pattern/pure    mu.pattern/query
@@ -46,7 +46,7 @@
   mu.transform/iter   mu.transform/stut
   mu.pattern/fmap     mu.pattern/with
   ;; harmony
-  mu.harmony/scale    mu.harmony/chord
+  mu.harmony/scale    mu.harmony/chord   mu.harmony/key
   ;; percussion
   mu.kit/kit          mu.kit/gm
   ;; grammars

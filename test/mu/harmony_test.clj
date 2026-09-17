@@ -177,3 +177,29 @@
     (let [q (h/scale :chromatic :c4 (n/notes c4))]
       (is (nil? (:spell (:value (first (p/query q [0 1])))))
           "the incoming c4 spelling must not survive as stale"))))
+
+;; ---- key ------------------------------------------------------------------
+
+(defn- key-notes [root mode pat]
+  (->> (h/key root mode pat)
+       (#(p/query % [0 1]))
+       (sort-by (comp first :whole))
+       (map (comp :note :value))))
+
+(deftest key-is-scale-with-an-octaveless-root
+  (is (= [50 53 57 62] (key-notes :d :aeolian (n/deg 1 3 5 8))))
+  (is (= [48 50 52] (key-notes :c :major (n/deg 1 2 3))) "octave 3 by default")
+  (is (= [62 64] (key-notes :d4 :major (n/deg 1 2))) "a root with an octave is taken as written"))
+
+(deftest key-applies-chromatic-alteration
+  (is (= [50 53 56] (key-notes :d :major (n/deg 1 b3 s4)))
+      "flat three and sharp four in D major"))
+
+(deftest alteration-adjusts-the-spelling
+  (let [ev (first (p/query (h/key :d :major (n/deg b3)) [0 1]))]
+    (is (= 53 (:note (:value ev))))
+    (is (= {:step :f :alter 0 :octave 3} (:spell (:value ev)))
+        "F-sharp flattened is F natural, not E")))
+
+(deftest scale-still-reads-bare-numbers-as-zero-based
+  (is (= [50] (degrees->notes :dorian :d3 [0]))))

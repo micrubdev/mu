@@ -102,7 +102,7 @@ edit rather than history you have to retype.
 
 ```clojure
 (ns jam
-  (:refer-clojure :exclude [rand])
+  (:refer-clojure :exclude [rand key])
   (:require [mu.live :refer :all]))
 ```
 

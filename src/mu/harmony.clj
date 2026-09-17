@@ -10,6 +10,7 @@
 
   Purity boundary: as with `mu.pattern`, nothing here reads wall-clock
   time, touches MIDI, or holds mutable state."
+  (:refer-clojure :exclude [key])
   (:require [clojure.string :as str]
             [mu.notation :as n]
             [mu.pattern :as p]
@@ -132,10 +133,16 @@
         rs        (root->spell root)]
     (p/fmap (fn [v]
               (if (and (map? v) (contains? v :note))
-                (let [d (Math/round (double (:note v)))
-                      m (degree->midi intervals r d)
-                      s (degree-spell mode rs d m)]
-                  (cond-> (assoc v :note m)
+                (let [d  (Math/round (double (:note v)))
+                      ;; A `deg` literal's b3 is the mode's third, lowered:
+                      ;; the letter comes from the degree, the alteration
+                      ;; is added on top, so F-sharp flattened spells F.
+                      alt (long (or (:alter v) 0))
+                      m  (+ (degree->midi intervals r d) alt)
+                      s  (some-> (degree-spell mode rs d (- m alt))
+                                 (update :alter + alt))]
+                  (cond-> (dissoc v :alter :deg)
+                    true     (assoc :note m)
                     s        (assoc :spell s)
                     (nil? s) (dissoc :spell)))
                 v))
@@ -165,3 +172,13 @@
                           (assoc ev :value (update value :note + (* 2 i))))
                         [ev]))
                     (p/query p sp))))))
+
+(defn key
+  "`scale` for a line written in `deg` notation, in textbeat's argument
+  order and with an octaveless root: `(key :d :aeolian p)` is
+  `(scale :aeolian :d3 p)`. A root that names its octave is taken as
+  written."
+  [root mode p]
+  (let [nm (name root)
+        root (if (re-find #"\d$" nm) root (keyword (str nm "3")))]
+    (scale mode root p)))

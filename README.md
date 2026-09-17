@@ -47,7 +47,7 @@ Open a jam buffer:
 
 ```clojure
 (ns jam
-  (:refer-clojure :exclude [rand])
+  (:refer-clojure :exclude [rand key])
   (:require [mu.live :refer :all]))
 
 (begin! {:port "Gervill" :bpm 120})   ; nil port takes the first available
