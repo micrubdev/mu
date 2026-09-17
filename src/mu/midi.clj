@@ -33,6 +33,16 @@
   (close-sink! [sink]
     "Release the device."))
 
+(defn bend->midi
+  "-1.0..1.0 to the 14-bit pitch-bend value: 0 at full down, 8192 at
+  centre, 16383 at full up."
+  ^long [v]
+  (let [d   (double v)
+        ;; The range is not symmetric about centre: 8192 steps down,
+        ;; 8191 up, so each direction scales to its own extreme.
+        raw (Math/round (+ 8192.0 (* (if (neg? d) 8192.0 8191.0) d)))]
+    (max 0 (min 16383 raw))))
+
 (defn vel->midi
   "0.0-1.0 double, or a raw 0-127 integer, to a clamped MIDI velocity."
   ^long [v]
@@ -81,12 +91,17 @@
 
 (defrecord JavaxSink [^MidiDevice device ^Receiver receiver]
   MidiSink
-  (encode [_ {:keys [type chan note vel cc val program]}]
+  (encode [_ {:keys [type chan note vel cc val program bend]}]
     (let [ch (int (or chan 0))]
       (case type
         :note-on  (short-message ShortMessage/NOTE_ON  ch note (vel->midi vel))
         :note-off (short-message ShortMessage/NOTE_OFF ch note 0)
-        :cc       (short-message ShortMessage/CONTROL_CHANGE ch cc val)
+        ;; A control value takes the velocity rule: 0.0-1.0 scales, an
+        ;; integer is the raw byte.
+        :cc       (short-message ShortMessage/CONTROL_CHANGE ch cc (vel->midi val))
+        ;; Pitch bend is a 14-bit value, 8192 at centre, sent LSB first.
+        :bend     (let [v (bend->midi bend)]
+                    (short-message ShortMessage/PITCH_BEND ch (bit-and v 0x7f) (bit-shift-right v 7)))
         ;; A program change carries ONE data byte; the second is ignored
         ;; and the encoded message is two bytes long, not three.
         :program  (short-message ShortMessage/PROGRAM_CHANGE ch program 0)

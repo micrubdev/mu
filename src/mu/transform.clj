@@ -292,3 +292,30 @@
     (<= k 0)   (p/fast n q)
     (>= k n)   (p/fast n p)
     :else      (apply p/fastcat (map #(if % p q) (bjorklund k n)))))
+
+;; ---- automation -----------------------------------------------------------
+;;
+;; A signal is continuous and never an onset, so the render cannot see
+;; it. These sample one at a rate and turn the samples into discrete
+;; control events -- {:cc n :val v}, {:bend v}, {:mod v} -- which the
+;; render sends where a note-on would go. Automation is then pattern
+;; data like everything else: `(play! :filter #'sweep)`, redefined on
+;; the cycle edge.
+
+(defn ctrl
+  "Controller `n` following `sig`, sampled `rate` times per cycle.
+
+    (ctrl 74 16 (slow 4 sine))   ; a four-bar filter sweep"
+  [n rate sig]
+  (p/with (p/fast rate (p/pure {:cc n})) :val sig))
+
+(defn bend
+  "Pitch bend following `sig` (-1.0 to 1.0), sampled `rate` times per cycle."
+  [rate sig]
+  (p/with (p/fast rate (p/pure {})) :bend sig))
+
+(defn modw
+  "The modulation wheel (cc 1) following `sig`, sampled `rate` times per
+  cycle. `modw`, not `mod`, which is core's modulo."
+  [rate sig]
+  (p/with (p/fast rate (p/pure {})) :mod sig))

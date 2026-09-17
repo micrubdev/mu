@@ -45,14 +45,33 @@
         (let [note (:note value)
               vel  (get value :vel 0.8)
               ch   (get value :chan chan)
+              at   (first whole)
               off  (if (:legato value)
-                     (max (second whole) (next-onset (first whole)))
+                     (max (second whole) (next-onset at))
                      (second whole))]
-          (when note
-            [{:at-cycle (first whole)
-              :spec {:type :note-on :chan ch :note note :vel vel}}
-             {:at-cycle off
-              :spec {:type :note-off :chan ch :note note}}])))
+          (cond
+            note
+            ;; A note with :mod wobbles the wheel for its own duration:
+            ;; the wheel moves just before the note-on and resets just
+            ;; after the note-off, in list order, which the stable sort
+            ;; in `render-cycle` preserves for equal instants.
+            (concat
+              (when-let [m (:mod value)]
+                [{:at-cycle at :spec {:type :cc :chan ch :cc 1 :val m}}])
+              [{:at-cycle at  :spec {:type :note-on :chan ch :note note :vel vel}}
+               {:at-cycle off :spec {:type :note-off :chan ch :note note}}]
+              (when (:mod value)
+                [{:at-cycle off :spec {:type :cc :chan ch :cc 1 :val 0}}]))
+
+            ;; Control events: one message at the onset, nothing to end.
+            (contains? value :cc)
+            [{:at-cycle at :spec {:type :cc :chan ch :cc (:cc value) :val (:val value)}}]
+
+            (contains? value :bend)
+            [{:at-cycle at :spec {:type :bend :chan ch :bend (:bend value)}}]
+
+            (contains? value :mod)
+            [{:at-cycle at :spec {:type :cc :chan ch :cc 1 :val (:mod value)}}])))
       onsets)))
 
 (defn render-cycle

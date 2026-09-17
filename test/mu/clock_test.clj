@@ -4,7 +4,8 @@
             [mu.render :as render]
             [mu.midi :as m]
             [mu.notation :refer [notes]]
-            [mu.pattern :as p]))
+            [mu.pattern :as p]
+            [mu.transform :as x]))
 
 (def NPC 1000000000)   ; 1 second per cycle, in nanos
 
@@ -272,3 +273,35 @@
                                    (= 60 (:note (:spec %))))
                              out))]
     (is (= NPC (:at c-off)) "voice b's onset does not cut voice a's legato")))
+
+;; ---- automation ----------------------------------------------------------
+
+(deftest control-events-render-as-cc-messages
+  (let [out (rendered {:v {:pattern (p/fast 4 (p/pure {:cc 74 :val 100})) :chan 2}} 0 [])]
+    (is (= 4 (count out)) "one message per onset, no note-off")
+    (is (every? #(= {:type :cc :chan 2 :cc 74 :val 100} (:spec %)) out))
+    (is (= [0 (/ NPC 4) (/ NPC 2) (* 3 (/ NPC 4))] (map :at out)))))
+
+(deftest ctrl-samples-a-signal-at-a-rate
+  (let [out (rendered {:v {:pattern (x/ctrl 74 4 p/saw) :chan 0}} 0 [])]
+    (is (= 4 (count out)))
+    (is (= [74 74 74 74] (map (comp :cc :spec) out)))
+    (is (= [0.125 0.375 0.625 0.875] (map (comp :val :spec) out))
+        "each step carries the signal sampled at the step's midpoint")))
+
+(deftest bend-and-modw-render
+  (let [out (rendered {:v {:pattern (p/stack (x/bend 1 (p/pure 0.5))
+                                              (x/modw 1 (p/pure 0.25)))
+                           :chan 0}} 0 [])
+        by  (group-by (comp :type :spec) out)]
+    (is (= {:type :bend :chan 0 :bend 0.5} (:spec (first (:bend by)))))
+    (is (= {:type :cc :chan 0 :cc 1 :val 0.25} (:spec (first (:cc by)))))))
+
+(deftest a-mod-suffix-wobbles-the-note-and-resets
+  (let [out (rendered {:v {:pattern (notes c4* _) :chan 0}} 0 [])
+        ccs (filter #(= :cc (:type (:spec %))) out)]
+    (is (= [{:type :cc :chan 0 :cc 1 :val 1.0} {:type :cc :chan 0 :cc 1 :val 0}]
+           (map :spec ccs)))
+    (is (= [0 (/ NPC 2)] (map :at ccs)) "mod on with the note-on, off with the note-off")
+    (is (= [:cc :note-on :note-off :cc] (map (comp :type :spec) out))
+        "the wheel moves before the note sounds, and after it stops")))

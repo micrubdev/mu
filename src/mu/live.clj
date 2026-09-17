@@ -44,6 +44,7 @@
   mu.transform/euclid mu.transform/off   mu.transform/superimpose
   mu.transform/euclid-full  mu.transform/arp
   mu.transform/strum  mu.transform/walk
+  mu.transform/ctrl   mu.transform/bend  mu.transform/modw
   mu.transform/iter   mu.transform/stut
   mu.pattern/fmap     mu.pattern/with
   ;; harmony

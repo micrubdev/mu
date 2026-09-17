@@ -126,3 +126,20 @@
     (testing "a control change is still three bytes"
       (is (= [(unchecked-byte 0xB0) (byte 123) (byte 0)]
              (bytes-of {:type :cc :chan 0 :cc 123 :val 0}))))))
+
+(deftest pitch-bend-bytes-without-a-device
+  (let [sink     (m/->JavaxSink nil nil)
+        bytes-of (fn [spec] (vec (.getMessage ^javax.sound.midi.MidiMessage
+                                              (m/encode sink spec))))]
+    (testing "centre is 8192: LSB 0, MSB 64"
+      (is (= [(unchecked-byte 0xE0) (byte 0) (byte 64)]
+             (bytes-of {:type :bend :chan 0 :bend 0.0}))))
+    (testing "full up is 16383"
+      (is (= [(unchecked-byte 0xE0) (byte 127) (byte 127)]
+             (bytes-of {:type :bend :chan 0 :bend 1.0}))))
+    (testing "full down is 0"
+      (is (= [(unchecked-byte 0xE3) (byte 0) (byte 0)]
+             (bytes-of {:type :bend :chan 3 :bend -1.0}))))
+    (testing "a control value may be a 0.0-1.0 double"
+      (is (= [(unchecked-byte 0xB0) (byte 74) (byte 64)]
+             (bytes-of {:type :cc :chan 0 :cc 74 :val 0.5}))))))
