@@ -103,3 +103,40 @@
   (let [riff (notes c4)]
     (is (= [{:note 60 :spell {:step :c :alter 0 :octave 4}}]
            (map :value (p/query (notes riff) [0 1]))))))
+
+;; ---- articulation suffixes --------------------------------------------
+
+(defn- vals-of [q] (map :value (p/query q [0 1])))
+
+(deftest accent-and-soften-set-velocity
+  (is (= 1.0 (:vel (first (vals-of (notes c4!))))))
+  (is (= 0.4 (:vel (first (vals-of (notes c4?))))))
+  (testing "the note itself is unchanged"
+    (is (= 60 (:note (first (vals-of (notes c4!))))))
+    (is (= {:step :c :alter 0 :octave 4} (:spell (first (vals-of (notes c4!))))))))
+
+(deftest explicit-velocity-is-a-percentage
+  (is (= 0.75  (:vel (first (vals-of (notes c4!75))))))
+  (is (= 0.75  (:vel (first (vals-of (notes bb2!75))))) "b is a letter before it is a flat")
+  (is (= 0.5   (:vel (first (vals-of (notes c4!5))))))
+  (is (= 0.333 (:vel (first (vals-of (notes c4!333))))))
+  (is (= 1.0   (:vel (first (vals-of (notes c4!!))))))
+  (is (= 1.0   (:vel (first (vals-of (notes c4!100)))))))
+
+(deftest mod-and-legato-suffixes
+  (is (= 1.0 (:mod (first (vals-of (notes c4*))))))
+  (is (true? (:legato (first (vals-of (notes c4>)))))))
+
+(deftest suffixes-combine-in-any-order
+  (is (= {:note 60 :spell {:step :c :alter 0 :octave 4} :vel 1.0 :mod 1.0 :legato true}
+         (first (vals-of (notes c4!*>)))))
+  (is (= {:note 60 :spell {:step :c :alter 0 :octave 4} :vel 1.0 :mod 1.0 :legato true}
+         (first (vals-of (notes c4>*!))))))
+
+(deftest suffixes-on-drums
+  (is (= {:drum :bd :vel 0.4} (first (vals-of (notes :bd?)))))
+  (is (= {:drum :sn :vel 1.0} (first (vals-of (notes :sn!))))))
+
+(deftest a-suffixed-non-note-symbol-is-not-a-note
+  (is (nil? (note-name->midi 'riff!)))
+  (is (nil? (note-name->midi 'h4!))))

@@ -31,19 +31,29 @@
   and dependency-free means it cannot reach for `mu.player/safe-render`
   itself, so the caller (mu.player/begin!) injects it instead."
   [render-voice cycle-n k {:keys [chan] :as v}]
-  (let [chan (or chan 0)]
-    (->> (render-voice k v cycle-n)
-         (filter p/onset?)
-         (mapcat
-           (fn [{:keys [whole value]}]
-             (let [note (:note value)
-                   vel  (get value :vel 0.8)
-                   ch   (get value :chan chan)]
-               (when note
-                 [{:at-cycle (first whole)
-                   :spec {:type :note-on :chan ch :note note :vel vel}}
-                  {:at-cycle (second whole)
-                   :spec {:type :note-off :chan ch :note note}}])))))))
+  (let [chan   (or chan 0)
+        onsets (filter p/onset? (render-voice k v cycle-n))
+        ;; A legato note ends where this voice's next onset begins -- any
+        ;; note, on any channel of the voice -- or at the cycle end when
+        ;; nothing follows, which the carry then holds into the next
+        ;; cycle as it would any other late note-off.
+        starts (sort (distinct (map (comp first :whole) onsets)))
+        next-onset (fn [t] (or (first (drop-while #(<= % t) starts))
+                               (inc cycle-n)))]
+    (mapcat
+      (fn [{:keys [whole value]}]
+        (let [note (:note value)
+              vel  (get value :vel 0.8)
+              ch   (get value :chan chan)
+              off  (if (:legato value)
+                     (max (second whole) (next-onset (first whole)))
+                     (second whole))]
+          (when note
+            [{:at-cycle (first whole)
+              :spec {:type :note-on :chan ch :note note :vel vel}}
+             {:at-cycle off
+              :spec {:type :note-off :chan ch :note note}}])))
+      onsets)))
 
 (defn render-cycle
   "Render one cycle into flat, pre-sorted, pre-encoded arrays.

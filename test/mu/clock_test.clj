@@ -247,3 +247,28 @@
           "render thread outlived stop! and can still publish")
       (is (not (.isAlive ^Thread (:dispatch trans)))
           "dispatch thread outlived stop!"))))
+
+;; ---- legato -------------------------------------------------------------
+
+(deftest legato-holds-until-the-next-onset
+  (let [out (rendered {:v {:pattern (notes c4> _ d4 _) :chan 0}} 0 [])
+        c-off (first (filter #(and (= :note-off (:type (:spec %)))
+                                   (= 60 (:note (:spec %))))
+                             out))]
+    (is (= (/ NPC 2) (:at c-off)) "the C's off lands on the D's onset, not its own end")))
+
+(deftest a-trailing-legato-note-holds-to-the-cycle-end
+  (let [out (rendered {:v {:pattern (notes c4 [d4> _]) :chan 0}} 0 [])
+        d-off (first (filter #(and (= :note-off (:type (:spec %)))
+                                   (= 62 (:note (:spec %))))
+                             out))]
+    (is (= NPC (:at d-off))
+        "with nothing after it, the D holds past its own end to the cycle boundary")))
+
+(deftest legato-ignores-other-voices
+  (let [out (rendered {:a {:pattern (notes c4> _) :chan 0}
+                       :b {:pattern (notes _ e4) :chan 1}} 0 [])
+        c-off (first (filter #(and (= :note-off (:type (:spec %)))
+                                   (= 60 (:note (:spec %))))
+                             out))]
+    (is (= NPC (:at c-off)) "voice b's onset does not cut voice a's legato")))
