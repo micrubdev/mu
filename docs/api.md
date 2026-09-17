@@ -7,17 +7,19 @@ Open a jam buffer first:
 
 ```clojure
 (ns jam
-  (:refer-clojure :exclude [rand])
+  (:refer-clojure :exclude [rand key])
   (:require [mu.live :refer :all]))
 ```
 
-`rand` is the only name in `mu.live` that collides with `clojure.core`, hence
-the exclude. (`every?` is core; `every` is not.)
+`rand` and `key` are the two names in `mu.live` that collide with
+`clojure.core`, hence the exclude. (`every?` is core; `every` is not.)
 
 ## Contents
 
 - [The model](#the-model) — what a pattern *is*
 - [Notation](#notation) — `notes`, `note-name->midi`
+- [Articulation](#articulation) — `!` `?` `*` `>` suffixes
+- [Degrees](#degrees) — `deg`, `key`
 - [Primitives](#primitives) — `pure`, `silence`, `stack`, `cyc`, `sub`
 - [Time](#time) — `fast`, `slow`, `early`, `late`, `rev`
 - [Structure](#structure) — `every`, `iter`, `off`, `superimpose`, `stut`
@@ -26,8 +28,11 @@ the exclude. (`every?` is core; `every` is not.)
 - [Randomness](#randomness) — `degrade`, `sometimes`
 - [Signals](#signals) — `sine`, `saw`, `tri`, `rand`
 - [Values](#values) — `fmap`, `with`
-- [Harmony](#harmony) — `scale`, `chord`, `arp`, `transpose`
+- [Harmony](#harmony) — `scale`, `chord`, `arp`, `strum`, `walk`, `transpose`
 - [Percussion](#percussion) — `kit`, `gm`
+- [Automation](#automation) — `ctrl`, `bend`, `modw`
+- [Song form](#song-form) — `song`, `section-at`, `once`
+- [Score](#score) — the `.mu` file, `load!`, `watch!`
 - [Performance](#performance) — `play!`, `mute`, `begin!`, transport
 - [Web view](#web-view) — `web!`
 - [Index](#index)
@@ -103,6 +108,68 @@ unquote operator.
 
 Accepts a symbol, string or keyword, so `:d3` works too. Returns `nil` if the
 spelling is not a note.
+
+## Articulation
+
+A note name or drum keyword can carry expression where it is written,
+after textbeat. Suffixes combine in any order:
+
+| suffix | sets | |
+|---|---|---|
+| `!` | `:vel 1.0` | accent |
+| `!75` | `:vel 0.75` | one to three digits, read as `0.<digits>`; `!!` and `!100` are full |
+| `?` | `:vel 0.4` | soften |
+| `*` | `:mod 1.0` | modulation wheel for the note's duration (textbeat's `~`, which is Clojure's unquote) |
+| `>` | `:legato true` | hold into the voice's next onset |
+
+```clojure
+(map :value (query (notes c4! d4? e4!75 f4>) [0 1]))
+;;=> ({:note 60 :spell {...} :vel 1.0}
+;;    {:note 62 :spell {...} :vel 0.4}
+;;    {:note 64 :spell {...} :vel 0.75}
+;;    {:note 65 :spell {...} :legato true})
+
+(map :value (query (notes :bd! :sn?) [0 1]))
+;;=> ({:drum :bd :vel 1.0} {:drum :sn :vel 0.4})
+```
+
+`:vel` and `:mod` are ordinary value keys — a later `with` overrides them.
+`:legato` is realised in the render: the note-off moves to the next onset
+in that voice, any note, any channel; with nothing after it the note holds
+to the cycle end. A raw MIDI number takes no suffix — the reader rejects
+`36!` before any macro sees it.
+
+## Degrees
+
+`deg` writes scale degrees the way musicians count them: from one.
+
+```clojure
+(map :value (query (deg 1 b3 5 8) [0 1]))
+;;=> ({:note 0 :deg true} {:note 2 :deg true :alter -1} {:note 4 :deg true} {:note 7 :deg true})
+```
+
+- Numbers keep counting past seven — `8` is the root an octave up — and
+  go negative below the root: `-1` is the degree under it. `0` throws.
+- `b3` flattens, `s4` sharpens (`#` is the reader's dispatch character).
+  A natural that needs a suffix takes an `n`: `n5!`, since `5!` is not a
+  symbol the reader accepts. `bb7` is a double flat.
+- Rests, vectors, nested calls and the articulation suffixes all work as
+  in `notes`; keywords are still drum names.
+
+`key` realises a `deg` line — `scale` in textbeat's argument order, with
+an octaveless root that defaults to octave 3:
+
+```clojure
+(map (comp :note :value) (query (key :d :aeolian (deg 1 b3 5 8)) [0 1]))
+;;=> (50 52 57 62)   ; b3 lowers aeolian's own F to E
+
+(map (comp :note :value) (query (key :d :major (deg 1 3 s4 n5!)) [0 1]))
+;;=> (50 54 56 57)
+```
+
+An alteration is applied on top of the mode's own degree and adjusts its
+spelling: `b3` in D major is F natural, not E. `(key :d4 ...)` takes the
+octave as written. `scale` still reads bare numbers as zero-based degrees.
 
 ## Primitives
 
@@ -399,6 +466,38 @@ becomes n onsets in n slots.
 
 Anything without a `:note`, and any lone event, passes through untouched.
 
+### `strum`
+
+```clojure
+(strum spread p)
+```
+
+Like `arp :up`, but every note rings to the chord's end: note *i* of *n*
+starts `i·spread/n` into the whole and holds. Negative spread strums high
+to low. textbeat's `maj$_`.
+
+```clojure
+(map :whole (filter onset? (query (strum 1/4 (chord 3 (notes 0))) [0 1])))
+;;=> ([0 1] [1/12 1] [1/6 1])
+```
+
+### `walk`
+
+```clojure
+(walk n p)
+```
+
+One note of each stack per cycle, low to high, round again after `n`
+cycles — on cycle *c* a stack sounds its `(c mod n)`-th note, wrapping
+past its size. Rhythm is untouched, so a progression under `walk` becomes
+a line tracing its chords. textbeat's `maj&4`.
+
+```clojure
+(let [w (walk 4 (scale :major :c4 (chord 3 (notes 0))))]
+  (for [c (range 5)] (map (comp :note :value) (filter onset? (query w [c (inc c)])))))
+;;=> ((60) (64) (67) (60) (60))
+```
+
 ### How notes are written
 
 An event's `:note` says how it **sounds**; an optional `:spell` says how it is
@@ -531,6 +630,90 @@ The General MIDI percussion map: notes 35–81 under descriptive names —
 
 `gm` is the kit `play!` uses when a voice gives no `:kit`.
 
+## Automation
+
+Control events ride the clock like notes. A value map with `:cc n :val v`
+renders as a control change at its onset; `{:bend v}` (−1.0–1.0) as pitch
+bend; `{:mod v}` as cc 1. None has a note-off. A signal is continuous and
+never an onset, so these sample one at a rate into discrete events:
+
+```clojure
+(ctrl n rate sig)   ; controller n
+(bend rate sig)     ; pitch bend
+(modw rate sig)     ; the mod wheel -- `modw`, since `mod` is core's modulo
+
+(map :value (filter onset? (query (ctrl 74 4 saw) [0 1])))
+;;=> ({:cc 74 :val 0.125} {:cc 74 :val 0.375} {:cc 74 :val 0.625} {:cc 74 :val 0.875})
+```
+
+A voice is a voice: `(play! :sweep #'sweep {:chan 2})`, redefined on the
+cycle edge. `cc!` is still there for the immediate case. A note's `*`
+suffix sends cc 1 just before its note-on and resets it just after its
+note-off.
+
+## Song form
+
+```clojure
+(song [:verse 8 verse] [:chorus 4 chorus] [:verse 8 verse])
+```
+
+Sections in order, each for a count of cycles, then round again: twenty
+cycles here. Each section counts its own cycles from zero — `every` inside
+the chorus counts chorus cycles — and a section is any pattern, so a
+section can be a `song`. `section-at` and `song-length` read the form back;
+`once` plays a pattern on cycle 0 only.
+
+```clojure
+(let [s (song [:a 2 (notes c4)] [:b 1 (notes d4)])]
+  [(for [c (range 4)] (map (comp :note :value) (filter onset? (query s [c (inc c)]))))
+   (section-at s 2)
+   (song-length s)])
+;;=> [((60) (60) (62) (60)) [:b 0] 3]
+```
+
+## Score
+
+textbeat's identity, on mu's model: a plaintext file where columns are
+voices and rows are steps.
+
+```
+; forge stomp
+%bpm 120  %key d aeolian  %grid 4
+%chan drums 9
+
+bass     drums    lead
+1        :bd      _
+         :hh      5
+b3       :sn      b3!
+5        :hh      8>
+
+@chorus x2
+8        :bd      [5 8]
+         :sn      _
+```
+
+- `%bpm`, `%grid` (rows per cycle, default 4), `%key root mode`, `%chan
+  track n`. Several may share a line.
+- The first other line is the header; its column positions carry every
+  row. A cell belongs to the nearest column start at or left of it.
+- A cell is one literal — `notes` notation, or `deg` under `%key` — with
+  its suffixes; `_` or nothing is a rest; `[a b]` subdivides.
+- A blank line ends a section. `@name` labels the next block, `@name x3`
+  repeats it, and a bare `@name` replays a section written earlier.
+  Sections play in order and loop, as `song`. A short last cycle is padded
+  with rests.
+
+```clojure
+(load! "stomp.mu")     ; one voice per track, named after it; sets the tempo
+(watch! "stomp.mu")    ; reload on every save -- `:w` is the gesture
+(unwatch! "stomp.mu")
+```
+
+Loading again replaces the voices and drops any the score no longer has,
+on the next cycle like any redefinition. A score that fails to parse is
+reported and the last good one keeps playing. `mu.score/parse` and
+`mu.score/compile` are pure, for tests and tools.
+
 ## Performance
 
 Voices hold **vars**, not pattern values, and the render thread derefs every
@@ -601,10 +784,13 @@ interface.
 |---|---|
 | `arp` | `[mode p]` |
 | `begin!` | `[]` `[{:keys [port bpm]}]` |
+| `bend` | `[rate sig]` |
 | `bpm` | `[n]` |
 | `cc!` | `[ch n v]` |
 | `chord` | `[p]` `[size p]` |
+| `ctrl` | `[n rate sig]` |
 | `cyc` | alias of `slowcat` |
+| `deg` | `[& body]` (macro) |
 | `degrade` | `[p]` |
 | `degrade-by` | `[amt p]` |
 | `early` | `[n p]` |
@@ -618,13 +804,17 @@ interface.
 | `gm` | value (a map) |
 | `hush` | `[]` |
 | `iter` | `[n p]` |
+| `key` | `[root mode p]` |
 | `kit` | `[k p]` |
 | `late` | `[n p]` |
+| `load!` | `[path]` |
 | `lsys` | `[rules axiom n]` |
+| `modw` | `[rate sig]` |
 | `mute` | `[k]` |
 | `note-name->midi` | `[sym]` |
 | `notes` | `[& body]` (macro) |
 | `off` | `[t f p]` |
+| `once` | `[p]` |
 | `panic` | `[]` |
 | `play!` | `[x]` `[k x]` `[k x opts]` |
 | `program!` | `[ch n]` |
@@ -634,6 +824,7 @@ interface.
 | `rev` | `[p]` |
 | `saw` | signal |
 | `scale` | `[mode root p]` |
+| `section-at` | `[s c]` |
 | `silence` | pattern |
 | `sine` | signal |
 | `slow` | `[n p]` |
@@ -641,9 +832,12 @@ interface.
 | `solo` | `[k]` |
 | `sometimes` | `[f p]` |
 | `sometimes-by` | `[amt f p]` |
+| `song` | `[& sections]` |
+| `song-length` | `[s]` |
+| `spelled` | `[event]` |
 | `stack` | `[& ps]` |
 | `stop-voice!` | `[k]` |
-| `spelled` | `[event]` |
+| `strum` | `[spread p]` |
 | `stut` | `[n fb t p]` |
 | `sub` | alias of `fastcat` |
 | `superimpose` | `[f p]` |
@@ -651,7 +845,10 @@ interface.
 | `tri` | signal |
 | `unmute` | `[k]` |
 | `unsolo` | `[]` |
+| `unwatch!` | `[path]` |
 | `voices` | `[]` |
+| `walk` | `[n p]` |
+| `watch!` | `[path]` |
 | `web!` | `[& args]` |
 | `web-off!` | `[]` |
 | `with` | `[p k v]` |

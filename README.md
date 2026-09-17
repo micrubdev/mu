@@ -15,7 +15,7 @@ the next cycle boundary.
 
 Complete: the pattern language, the MIDI transport, and the browser web view.
 
-- 226 Clojure tests / 1007 assertions, 0 failures
+- 279 Clojure tests / 1121 assertions, 0 failures
 - 68 client tests (Vitest), 0 failures
 - p99 dispatch jitter **within the 1 ms budget** on the shipped render path —
   see [Timing](#timing)
@@ -63,8 +63,9 @@ Open a jam buffer:
 (end!)        ; stop the transport and close the port
 ```
 
-`rand` is the only name in `mu.live` that collides with `clojure.core`, hence
-the `:refer-clojure :exclude`. (`every?` is core; `every` is not.)
+`rand` and `key` are the two names in `mu.live` that collide with
+`clojure.core`, hence the `:refer-clojure :exclude`. (`every?` is core;
+`every` is not.)
 
 `(mu.midi/list-ports)` shows what this JVM can see. On a machine with no
 ALSA or CoreMIDI that is just `Gervill` and `Real Time Sequencer` — an
@@ -189,6 +190,16 @@ Check each of these:
 
 Middle C is `c4` = 60. `s` and `#` sharpen, `f` and `b` flatten.
 
+A note or drum literal takes textbeat-style **articulation suffixes** where
+it is written — `c4!` accent, `c4!75` velocity, `c4?` soften, `c4*` mod
+wheel, `c4>` legato into the next onset — and `deg` writes **scale
+degrees** the way musicians count them, realised by `key`:
+
+```clojure
+(notes c4! d4? e4!75 f4>)
+(key :d :aeolian (deg 1 b3 5 8))   ; b3 lowers the mode's third; 8 is the octave
+```
+
 The body is subdivided across one cycle, and a vector subdivides further:
 
 ```clojure
@@ -220,6 +231,27 @@ A `notes` body is note-literal notation all the way down, nested forms
 included: `(notes (arp :up p))` reads `:up` as a drum, exactly as
 `(notes (fast 2 c4))` reads `2` as a note. Transforms wrap a `notes` form
 from outside — `(arp :up (notes …))`.
+
+### The `.mu` score
+
+The same notation as a vertical plaintext score, after
+[textbeat](https://github.com/flipcoder/textbeat): columns are voices,
+rows are steps, blank lines make sections.
+
+```
+%bpm 120  %key d aeolian  %grid 4
+%chan drums 9
+
+bass     drums    lead
+1        :bd      _
+         :hh      5
+b3       :sn      b3!
+5        :hh      8>
+```
+
+`(load! "stomp.mu")` registers one voice per track; `(watch! "stomp.mu")`
+reloads on every save, so `:w` in your editor is the performance gesture.
+See `docs/api.md` § Score.
 
 ## The algebra
 
@@ -513,11 +545,10 @@ native-output gate.
 
 ## Out of scope for v1
 
-Listed so nobody adds them opportunistically: CC/bend/aftertouch automation
-(`with` already carries the keys; only `mu.midi/encode` needs cases), `jux`
-(waits on pan), MIDI input and clock sync, explicit transitions and crossfades,
-the native timestamped sink (gated on measurement), multi-port routing, and any
-GUI.
+Listed so nobody adds them opportunistically: aftertouch, `jux` (waits on
+pan), MIDI input and clock sync, explicit transitions and crossfades, the
+native timestamped sink (gated on measurement), multi-port routing, and any
+GUI. (CC and pitch-bend automation landed as `ctrl`, `bend` and `modw`.)
 
 ## Documents
 

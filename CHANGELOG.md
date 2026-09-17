@@ -7,6 +7,33 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Textbeat vocabulary
+
+Six borrowings from [textbeat](https://github.com/flipcoder/textbeat),
+each mapped onto the pure-pattern model rather than copied.
+
+- **Articulation suffixes** on note names and drum keywords: `!`
+  accent, `!75` velocity, `?` soften, `*` mod wheel, `>` legato. `~`
+  would be the reader's unquote, so vibrato is `*`; raw numbers take no
+  suffix because `36!` is not a symbol the reader accepts. Legato is
+  realised in `mu.render`: the note-off moves to the voice's next onset.
+- **`deg` and `key`**: scale degrees counted from one, `b3`/`s4` for
+  alterations (`#` is a dispatch character), `n5!` for a suffixed
+  natural, `8` for the octave. `key` is `scale` in textbeat's argument
+  order with an octaveless root. An alteration adjusts the spelling.
+  `key` is the second `clojure.core` collision, beside `rand`.
+- **`strum` and `walk`**, sharing `arp`'s stack grouping (`restack`).
+- **Automation on the render path**: `{:cc n :val v}`, `{:bend v}` and
+  `{:mod v}` values render at their onset; `ctrl`, `bend` and `modw`
+  sample a signal into them. `mu.midi/encode` gained `:bend` (14-bit,
+  asymmetric about 8192) and reads a control value by the velocity
+  rule. A note's `*` sends cc 1 around it.
+- **`song`, `section-at`, `song-length`, `once`**: sections with repeat
+  counts, each counting its own cycles, nesting freely.
+- **The `.mu` score** (`mu.score`): columns are voices, rows are steps,
+  `%` directives, `@` sections. `parse` and `compile` are pure; `load!`
+  registers a voice per track and `watch!` reloads on save.
+
 ### Program change
 
 - `mu.midi/encode` gained `:program`. It is a two-byte message — status
