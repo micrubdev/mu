@@ -7,32 +7,136 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
-### Textbeat vocabulary
+### Textbeat vocabulary (2026-09-17)
 
 Six borrowings from [textbeat](https://github.com/flipcoder/textbeat),
-each mapped onto the pure-pattern model rather than copied.
+Grady O'Connell's plaintext tracker, each mapped onto the pure-pattern
+model rather than copied. The constraint throughout: patterns stay pure
+query functions and every change lands on a cycle boundary, so
+textbeat's stateful features (persistent `@v` volume, "walk until
+muted") are re-expressed as pattern data. Seven commits, `8ef6331` to
+`c01a0e8`; 17 files, +1253/−91; 279 tests / 1121 assertions, up from
+233 / 1014. Design note in `docs/superpowers/specs/2026-09-17-textbeat-vocabulary-design.md`
+(local; that directory is gitignored).
 
-- **Articulation suffixes** on note names and drum keywords: `!`
-  accent, `!75` velocity, `?` soften, `*` mod wheel, `>` legato. `~`
-  would be the reader's unquote, so vibrato is `*`; raw numbers take no
-  suffix because `36!` is not a symbol the reader accepts. Legato is
-  realised in `mu.render`: the note-off moves to the voice's next onset.
-- **`deg` and `key`**: scale degrees counted from one, `b3`/`s4` for
-  alterations (`#` is a dispatch character), `n5!` for a suffixed
-  natural, `8` for the octave. `key` is `scale` in textbeat's argument
-  order with an octaveless root. An alteration adjusts the spelling.
-  `key` is the second `clojure.core` collision, beside `rand`.
-- **`strum` and `walk`**, sharing `arp`'s stack grouping (`restack`).
-- **Automation on the render path**: `{:cc n :val v}`, `{:bend v}` and
-  `{:mod v}` values render at their onset; `ctrl`, `bend` and `modw`
-  sample a signal into them. `mu.midi/encode` gained `:bend` (14-bit,
-  asymmetric about 8192) and reads a control value by the velocity
-  rule. A note's `*` sends cc 1 around it.
-- **`song`, `section-at`, `song-length`, `once`**: sections with repeat
-  counts, each counting its own cycles, nesting freely.
-- **The `.mu` score** (`mu.score`): columns are voices, rows are steps,
-  `%` directives, `@` sections. `parse` and `compile` are pure; `load!`
-  registers a voice per track and `watch!` reloads on save.
+#### Added
+
+- **Articulation suffixes** (`mu.notation`). A note name or drum keyword
+  carries expression where it is written, in any order, each at most
+  once:
+  - `!` → `:vel 1.0`; `!<digits>` → `:vel 0.<digits>` for one to three
+    digits (`!75` 0.75, `!5` 0.5, `!333` 0.333); `!!` and `!100` are
+    1.0.
+  - `?` → `:vel 0.4`.
+  - `*` → `:mod 1.0`, the modulation wheel for the note's duration.
+  - `>` → `:legato true`.
+  - `split-suffix` is public: `[stem suffix-map]` from a literal's name,
+    shared by `notes`, `deg` and `mu.score`.
+- **Legato in the render** (`mu.render/voice-messages`). A `:legato`
+  onset's note-off moves to the start of the voice's next onset — any
+  note, any channel of that voice — or, with nothing after it, to the
+  cycle end. Other voices never cut a legato note. A note-off exactly at
+  the boundary belongs to the current cycle, as before, so nothing new
+  is carried.
+- **`deg`** (`mu.notation`, macro). Scale degrees counted from one:
+  `(deg 1 b3 5 8)`. Events carry `{:note d :deg true}` with `d`
+  zero-based, plus `:alter` when the literal was `b`- or `s`-prefixed
+  (`bb7` is −2). Numbers keep counting past seven (`8` is the octave)
+  and go negative below the root (`-1` is the leading degree); `0`
+  throws. `n` prefixes a natural that needs a suffix — `n5!`. Rests,
+  vectors, nested calls, keywords-as-drums and articulation suffixes
+  behave as in `notes`. `literal`, `degree-literal` and
+  `degree->zero-based` are public for `mu.score`.
+- **`key`** (`mu.harmony`). `(key root mode p)` — `scale` in textbeat's
+  argument order, with an octaveless root defaulting to octave 3
+  (`:d` → `:d3`; `:d4` is taken as written).
+- **`strum`** (`mu.transform`). `(strum spread p)`: note *i* of an
+  *n*-note stack starts `i·spread/n` into the shared whole and holds to
+  its end; negative spread strums high to low; a lone note passes
+  through. textbeat's `maj$_`.
+- **`walk`** (`mu.transform`). `(walk n p)`: on cycle *c* each stack
+  sounds its `(c mod n)`-th note, wrapping past the stack size, keeping
+  the stack's own whole. `n <= 0` is the identity. textbeat's `maj&4`.
+- **Control events on the render path** (`mu.render`). Onset values
+  without `:note` now render: `{:cc n :val v}` → one control change,
+  `{:bend v}` → one pitch bend (−1.0–1.0), `{:mod v}` → cc 1. None has a
+  note-off. A note carrying `:mod` sends cc 1 = `:mod` immediately
+  before its note-on and cc 1 = 0 immediately after its note-off, in
+  that list order at equal instants.
+- **`ctrl`, `bend`, `modw`** (`mu.transform`). Sample a signal `rate`
+  times per cycle into those control events: `(ctrl 74 16 (slow 4
+  sine))`. `modw` rather than `mod`, which is core's modulo.
+- **`:bend` encoding** (`mu.midi`). `bend->midi` maps −1.0–1.0 onto the
+  14-bit range asymmetrically — 8192 steps down, 8191 up — so both
+  extremes are reachable exactly; `encode` splits it LSB-first into a
+  `PITCH_BEND` message.
+- **`song`, `song-length`, `section-at`, `once`** (`mu.transform`).
+  `(song [:a 8 pa] [:b 4 pb])` plays sections for their cycle counts and
+  loops; each section sees its own cycle count from zero (the
+  `slowcat` offset argument), so `every` inside a section counts
+  section cycles; sections are patterns, so songs nest. The section
+  table lives in the pattern's metadata; `section-at` returns
+  `[label cycle-in-section]`. Bad sections (zero cycles, wrong shape, no
+  sections) throw at construction. `once` plays cycle 0 only.
+- **`mu.score`** — the `.mu` score. A plaintext file where columns are
+  voices and rows are steps:
+  - Directives: `%bpm n`, `%grid n` (rows per cycle, default 4), `%key
+    root mode`, `%chan track n`; several per line. `;` starts a comment.
+  - The first remaining line is the header; its word positions define
+    the columns. A cell belongs to the nearest column start at or left
+    of its first character. `[a b]` is one token.
+  - A cell is one literal — `notes` notation, or `deg` under `%key` —
+    with suffixes; `_` or an empty cell is a rest; `[a b]` subdivides.
+    Cells use their own small grammar, not the Clojure reader, so `8>`
+    and `1!` are legal there.
+  - A blank line ends a section. `@name` labels the next block, `@name
+    x3` repeats it, a bare `@name` replays a section written earlier;
+    unlabelled sections are numbered. Tracks become `song`s; a short
+    final cycle is padded with rests.
+  - `parse` and `compile` are pure. `load!` registers one voice per
+    track under its name (`%chan` honoured), sets `bpm`, and on reload
+    replaces the voices and stops any the score dropped. `watch!` polls
+    mtime once a second and reloads, keeping the last good score on a
+    parse error; `unwatch!` stops it.
+- **Re-exports** in `mu.live`: `deg`, `key`, `strum`, `walk`, `ctrl`,
+  `bend`, `modw`, `song`, `section-at`, `song-length`, `once`, `load!`,
+  `watch!`, `unwatch!`.
+
+#### Changed
+
+- `mu.harmony/scale` applies an event's `:alter` on top of the mode's
+  own degree and adjusts the carried spelling (`b3` in D major is F
+  natural, not E), then drops `:alter` and `:deg` from the value.
+- `mu.transform/arp` is now written over a shared `restack` helper
+  (cycle-anchored stack grouping with a total sort), which `strum` and
+  `walk` reuse; behaviour is unchanged.
+- `mu.midi/encode` reads a `:cc` value by the velocity rule: a 0.0–1.0
+  double scales, an integer is the raw byte.
+- `mu.live` excludes `key` from `clojure.core` alongside `rand`; the jam
+  buffer in the README and `docs/repl.md` is now
+  `(:refer-clojure :exclude [rand key])`.
+- README: articulation and `deg`/`key` under Notation, a new "The `.mu`
+  score" subsection, CC/bend automation removed from "Out of scope".
+  `docs/api.md`: Articulation, Degrees, Automation, Song form and Score
+  sections, `strum`/`walk` under Harmony, index updated.
+
+#### Notation decisions forced by the reader
+
+- Vibrato is `*`, not textbeat's `~`: `~` is unquote.
+- Sharps are `s4`, not `#4`: `#` is the dispatch character.
+- Tokens that start with a digit cannot carry a suffix or mark as
+  Clojure symbols (`1'`, `36!`, `5!` are invalid numbers), so: raw MIDI
+  numbers take no suffix; `deg` has the `n` prefix and writes octaves as
+  numbers (`8`, `-1`) rather than `'`/`,`; `.mu` cells bypass the reader.
+- Inside `notes`, `b3` remains the note B3. Flat degrees exist only in
+  `deg` and in `%key` scores.
+
+#### Dropped from textbeat, deliberately
+
+- Duration suffixes (`*`, `.`): the whole already says it — `[c4 _]`.
+- Named chord vocabulary (`maj7#4/C`): `chord` is diatonic by design.
+- textbeat's stateful volume (`@v`) and "walk until muted": the pattern
+  loops by default and `with` sets velocity.
 
 ### Program change
 
