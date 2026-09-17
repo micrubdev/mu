@@ -118,6 +118,55 @@
   [{:keys [whole value]}]
   (boolean (and whole (map? value) (contains? value :note))))
 
+(defn- restack
+  "The stack machinery `arp`, `strum` and `walk` share.
+
+  Query a whole cycle at a time and clip, the way `rev` and `every` do.
+  Grouping is the reason: a stack is discovered by which note-bearing
+  events share a :whole IN THIS QUERY, so a narrower span could see
+  fewer notes and re-time them differently. Anchoring on the containing
+  cycle makes the grouping independent of how the span was carved.
+
+  `f` is called with the cycle number and one stack -- two or more
+  events sharing a :whole, sorted by :note then printed value (a total
+  order, so unisons come out the same whether the query was split or
+  not) -- and returns the events to replace it with."
+  [f p]
+  (p/pat
+    (fn [sp]
+      (mapcat
+        (fn [[qb qe :as piece]]
+          (let [c    (t/floor-cycle qb)
+                evs  (p/query p [c (inc c)])
+                {notes true others false} (group-by note-event? evs)
+                done (mapcat
+                       (fn [[_ evs]]
+                         (if (< (count evs) 2)
+                           evs
+                           (f c (vec (sort-by (juxt (comp :note :value)
+                                                    (comp pr-str :value))
+                                              evs)))))
+                       (group-by :whole notes))]
+            (keep (fn [ev]
+                    (when-let [part (t/sect (:part ev) piece)]
+                      (assoc ev :part part)))
+                  (concat others done))))
+        (t/split-cycles sp)))))
+
+(defn- reslot
+  "Put the notes at `idxs` of a sorted stack into equal consecutive
+  slots starting at the stack's whole, `len` cycles each."
+  [sorted idxs len]
+  (let [[wb _] (:whole (first sorted))]
+    (keep-indexed
+      (fn [i idx]
+        (let [b    (+ wb (* i len))
+              slot [b (+ b len)]
+              part (t/sect slot (:part (nth sorted idx)))]
+          (when part
+            (assoc (nth sorted idx) :whole slot :part part))))
+      idxs)))
+
 (defn arp
   "Spread simultaneous notes across the span they share.
 
@@ -132,56 +181,58 @@
     (arp :up (chord 3 (notes 0 3 4)))
 
   A lone event is not a stack and passes through untouched, as does
-  anything without a :note. The sort is total -- :note first, then the
-  printed value -- because a merely stable sort would order unisons by
-  whatever order the query happened to produce them in, and that
-  differs between a split and an unsplit query."
+  anything without a :note."
   [mode p]
   (let [order (or (arp-orders mode)
                   (throw (ex-info (str "mu: unknown arp mode " (pr-str mode)
                                        ". Known: :up, :down, :updown, :downup")
                                   {:mode mode})))]
-    (p/pat
-      (fn [sp]
-        ;; Query a whole cycle at a time and clip, the way `rev` and
-        ;; `every` do. Grouping is the reason: a stack is discovered by
-        ;; which events share a :whole IN THIS QUERY, so a narrower span
-        ;; could see fewer notes and slot the arpeggio differently.
-        ;; Anchoring on the containing cycle makes the grouping -- and
-        ;; therefore the slots -- independent of how the span was carved.
-        (mapcat
-          (fn [[qb qe :as piece]]
-            (let [c    (t/floor-cycle qb)
-                  full [c (inc c)]
-                  evs  (p/query p full)
-                  {notes true others false} (group-by note-event? evs)
-                  arped
-                  (mapcat
-                    (fn [[whole evs]]
-                      (if (< (count evs) 2)
-                        evs
-                        (let [sorted (vec (sort-by (juxt (comp :note :value)
-                                                         (comp pr-str :value))
-                                                   evs))
-                              idxs   (vec (order (count sorted)))
-                              steps  (count idxs)
-                              [wb we] whole
-                              len    (/ (- we wb) steps)]
-                          (keep-indexed
-                            (fn [i idx]
-                              (let [b    (+ wb (* i len))
-                                    slot [b (+ b len)]
-                                    part (t/sect slot (:part (nth sorted idx)))]
-                                (when part
-                                  (assoc (nth sorted idx) :whole slot :part part))))
-                            idxs))))
-                    (group-by :whole notes))]
-              ;; clip everything back to the span actually asked for
-              (keep (fn [ev]
-                      (when-let [part (t/sect (:part ev) piece)]
-                        (assoc ev :part part)))
-                    (concat others arped))))
-          (t/split-cycles sp))))))
+    (restack (fn [_ sorted]
+               (let [idxs    (vec (order (count sorted)))
+                     [wb we] (:whole (first sorted))]
+                 (reslot sorted idxs (/ (- we wb) (count idxs)))))
+             p)))
+
+(defn strum
+  "Stagger a stack's onsets and let every note ring to the chord's end.
+
+  Note i of n starts `i * spread / n` into the whole and holds to the
+  whole's end, so `(strum 1/4 (chord 3 p))` brushes a triad over the
+  first quarter of its span. Negative spread strums high to low. Unlike
+  `arp`, nothing is cut short: the chord still sounds as a chord once
+  the strum is through.
+
+  textbeat's `maj$_`."
+  [spread p]
+  (restack (fn [_ sorted]
+             (let [n       (count sorted)
+                   [wb we] (:whole (first sorted))
+                   step    (/ (abs spread) n)
+                   order   (if (neg? spread) (reverse (range n)) (range n))]
+               (keep-indexed
+                 (fn [i idx]
+                   (let [b     (+ wb (* i step))
+                         whole [b we]
+                         part  (t/sect whole (:part (nth sorted idx)))]
+                     (when part
+                       (assoc (nth sorted idx) :whole whole :part part))))
+                 order)))
+           p))
+
+(defn walk
+  "Play one note of each stack per cycle, low to high, coming round
+  again after n cycles: on cycle c a stack sounds its (c mod n)-th note,
+  wrapping past its size. Rhythm is untouched -- each stack keeps its
+  own whole -- so a chord progression under `walk` becomes a single
+  line tracing the chords.
+
+  textbeat's `maj&4`; `walk` with n equal to the stack size is its `maj&`."
+  [n p]
+  (if (<= n 0)
+    p
+    (restack (fn [c sorted]
+               [(nth sorted (mod (mod c n) (count sorted)))])
+             p)))
 
 (defn iter
   "Rotate the pattern one nth of a cycle further on each successive

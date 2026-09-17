@@ -199,3 +199,52 @@
     (is (= [:o :o :o :o] (vals-at (x/euclid-full 0 4 (p/pure :x) (p/pure :o)) 0))))
   (testing "k = n means the first pattern everywhere"
     (is (= [:x :x :x :x] (vals-at (x/euclid-full 4 4 (p/pure :x) (p/pure :o)) 0)))))
+
+;; ---- strum and walk -------------------------------------------------------
+
+(defn- triad
+  "A C-major-ish stack of three notes sharing one whole, as `chord` makes."
+  []
+  (p/stack (p/pure {:note 60}) (p/pure {:note 64}) (p/pure {:note 67})))
+
+(defn- onsets [p cyc]
+  (->> (p/query p [cyc (inc cyc)])
+       (filter p/onset?)
+       (sort-by (juxt (comp first :whole) (comp :note :value)))))
+
+(deftest strum-staggers-onsets-and-holds-to-the-end
+  (let [evs (onsets (x/strum 1/4 (triad)) 0)]
+    (is (= [0 1/12 2/12] (map (comp first :whole) evs)) "spread over the first quarter, low to high")
+    (is (= [60 64 67] (map (comp :note :value) evs)))
+    (is (every? #(= 1 (second (:whole %))) evs) "every note holds to the chord's end")))
+
+(deftest negative-spread-strums-downward
+  (let [evs (onsets (x/strum -1/4 (triad)) 0)]
+    (is (= [67 64 60] (map (comp :note :value) evs)))
+    (is (= [0 1/12 2/12] (map (comp first :whole) evs)))))
+
+(deftest strum-leaves-lone-notes-alone
+  (is (= (p/query (p/pure {:note 60}) [0 1])
+         (p/query (x/strum 1/4 (p/pure {:note 60})) [0 1]))))
+
+(deftest strum-is-span-independent
+  (let [s (x/strum 1/2 (triad))]
+    (is (= (set (map (juxt :whole :value) (filter p/onset? (p/query s [0 1]))))
+           (set (map (juxt :whole :value)
+                     (filter p/onset? (mapcat #(p/query s %) [[0 1/8] [1/8 1/2] [1/2 1]]))))))))
+
+(deftest walk-plays-one-note-per-cycle-wrapping
+  (let [w (x/walk 4 (triad))]
+    (is (= [60] (map (comp :note :value) (onsets w 0))))
+    (is (= [64] (map (comp :note :value) (onsets w 1))))
+    (is (= [67] (map (comp :note :value) (onsets w 2))))
+    (is (= [60] (map (comp :note :value) (onsets w 3))) "wraps around")
+    (is (= [60] (map (comp :note :value) (onsets w 4))) "and the walk starts again")
+    (is (= [[0 1]] (map :whole (onsets w 0))) "each note fills its cycle")))
+
+(deftest walk-of-a-melody-walks-each-stack-in-turn
+  (let [two (p/sub (triad) (p/pure {:note 40}))
+        w   (x/walk 2 two)]
+    (is (= [60 40] (map (comp :note :value) (onsets w 0))) "cycle 0: first of each stack, in place")
+    (is (= [64 40] (map (comp :note :value) (onsets w 1))))
+    (is (= [[0 1/2] [1/2 1]] (map :whole (onsets w 0))) "the melody's own rhythm is kept")))
