@@ -54,6 +54,17 @@ function blip (t, freq, accent) {
   osc.connect(gain).connect(audio.destination)
   osc.start(t)
   osc.stop(t + 0.04)
+  queued.push({ osc, t })
+}
+
+// Clicks already handed to Web Audio but not yet sounded. Kept so a
+// bar-length change can cancel them and reschedule on the new timing.
+let queued = []
+
+function cancelQueued () {
+  const now = audio.currentTime
+  for (const { osc, t } of queued) if (t > now) osc.stop()
+  queued = []
 }
 
 function schedule () {
@@ -74,6 +85,8 @@ function schedule () {
     })
   }
   state.scheduledUntil = to
+  const now = audio.currentTime
+  queued = queued.filter(q => q.t > now)
 }
 
 function frame () {
@@ -86,9 +99,11 @@ function frame () {
 
 let timer = null
 async function play () {
+  state.playing = true          // before the await: a double tap starts once
   audio ??= new AudioContext()
   await audio.resume()
-  state.playing = true
+  if (!state.playing) return    // stopped again while audio was waking up
+  clearInterval(timer)
   state.t0 = audio.currentTime + 0.05
   state.scheduledUntil = state.t0
   $('play').textContent = 'stop'
@@ -100,6 +115,7 @@ async function play () {
 function stop () {
   state.playing = false
   clearInterval(timer)
+  if (audio) cancelQueued()
   $('play').textContent = 'play'
   drawStatic()
 }
@@ -141,7 +157,10 @@ $('bar').addEventListener('input', () => {
     const now = audio.currentTime
     const phase = (((now - state.t0) / state.barSec) % 1 + 1) % 1
     state.t0 = now - phase * next
-    // scheduledUntil stays: clicks already queued play out, none twice.
+    // Drop clicks queued on the old timing and reschedule from now, so a
+    // drag never doubles or skips a beat.
+    cancelQueued()
+    state.scheduledUntil = now
   }
   state.barSec = next
   $('bar-value').textContent = `${next} s`
