@@ -110,6 +110,19 @@ voice list, the current cycle's events, and the same notes rendered through
 a soundfont in the browser. Eval goes to this process's nREPL, so an editor
 and the browser can be attached at once.
 
+Above the HUD, a **circle view** draws each voice's current bar as a ring:
+twelve o'clock is the downbeat, time runs clockwise, strong spokes mark the
+beats and small ticks the subdivisions, so 6/8 and 3/4 look different even
+though both have six steps. Drum voices get one ring per drum. A playhead
+sweeps in step with the browser's audio. The meter is guessed from the
+pattern, or declared with `(play! :drums #'beat {:meter [3 3]})` — see
+`docs/api.md`.
+
+`/compare.html` is a standalone teaching page that needs no JVM: meters
+overlaid on a 60-step clock face (60 divides by 2, 3, 4, 5, 6, 10, 12, 15,
+20 and 30, so 4/4, 3/4, 6/8, 5/4 and 12/8 share one grid), each drawn as a
+polygon, with the shared beats highlighted and a click track per ring.
+
 The server side of this (HTTP, the `/hud` and `/repl` WebSockets, the nREPL
 bridge) is what `web!` starts. It serves the browser client from
 `client/dist`, built separately — see below.

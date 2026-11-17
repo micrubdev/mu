@@ -743,6 +743,31 @@ redefinition lands in time with no transition machinery.
 (end!)             ; stop the transport and close the port
 ```
 
+### `:meter` — how the web view's circle draws a voice
+
+```clojure
+(play! :drums #'beat {:meter [3 3]})    ; 6/8: two beats of three
+(play! :waltz #'w    {:meter [2 2 2]})  ; 3/4: three beats of two
+(play! :odd   #'o    {:meter [2 2 3]})  ; 7/8
+```
+
+A grouping vector: one number per beat, each the steps in that beat. It
+shapes the drawing only, never the sound. One cycle is one bar. Anything
+but a non-empty vector of positive integers throws at `play!`.
+
+Without `:meter`, the circle guesses from the smallest grid the voice's
+onsets fit (remembered across bars until the pattern is redefined, so
+`degrade` and `every` don't make it flicker):
+
+| steps | drawn as |
+|---|---|
+| 1, 2, 4 | 4/4, beats only |
+| 8, 16, 32… | 4/4, beats subdivided |
+| 3 | 3/4, beats only |
+| 6 | 6/8 (`[3 3]`) |
+| 12, 24… | 12/8 |
+| anything else, or > 64 | one group (> 64: plain 4/4); declare `:meter` |
+
 `program!` and `cc!` send immediately rather than joining the schedule.
 A patch is a mode a channel is in, not an event in a pattern: putting it
 in pattern data would mean tracking a last-program per channel on a
