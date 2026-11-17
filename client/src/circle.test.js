@@ -154,3 +154,64 @@ test('entries older than the current one are discarded, and the queue never grow
   q.current(100)
   expect(q.size()).toBe(1)
 })
+
+// --- svg -------------------------------------------------------------
+
+import { circleSvg } from './circle.js'
+
+const count = (s, needle) => s.split(needle).length - 1
+
+test('circleSvg draws spokes, ticks, dots and no playhead when angle is null', () => {
+  const m = circleModel(msg({ drums, bass }))
+  const svg = circleSvg(m, null)
+  const spokes = m.rings.reduce((a, r) => a + r.spokes.length, 0)
+  const ticks = m.rings.reduce((a, r) => a + r.ticks.length, 0)
+  const dots = m.rings.reduce((a, r) => a + r.dots.length, 0)
+  expect(svg.startsWith('<svg')).toBe(true)
+  expect(count(svg, 'class="spoke"')).toBe(spokes)
+  expect(count(svg, 'class="tick"')).toBe(ticks)
+  expect(count(svg, 'class="hit')).toBe(dots)
+  expect(svg).not.toContain('class="playhead"')
+})
+
+test('circleSvg rotates the playhead to the angle, in degrees', () => {
+  const svg = circleSvg(circleModel(msg({ bass })), Math.PI / 2)
+  expect(svg).toContain('class="playhead"')
+  expect(svg).toContain('rotate(90)')
+})
+
+test('a dot the playhead just passed is lit, one far behind is not', () => {
+  const m = circleModel(msg({ drums }))       // hits at 0, π, 1.5π
+  const svg = circleSvg(m, Math.PI + 0.02)
+  expect(count(svg, 'class="hit lit"')).toBe(1)
+})
+
+test('muted and error rings carry their classes', () => {
+  const m = circleModel(msg({ bass }, { bass: { muted: true, error: 'x' } }))
+  const svg = circleSvg(m, null)
+  expect(svg).toContain('muted')
+  expect(svg).toContain('error')
+})
+
+test('voice names are escaped', () => {
+  const svg = circleSvg(circleModel(msg({ '<b>': bass })), null)
+  expect(svg).not.toContain('<b>')
+  expect(svg).toContain('&lt;b&gt;')
+})
+
+test('the viewBox grows with the model', () => {
+  const lanes = Array.from({ length: 20 }, (_, i) => `d${i}`)
+  const m = circleModel(msg({ big: { ...drums, lanes, hits: [] } }))
+  const half = Number(circleSvg(m, null).match(/viewBox="(-?[\d.]+)/)[1]) * -1
+  expect(half).toBeGreaterThanOrEqual(m.outer)
+})
+
+import { circleLegend } from './circle.js'
+
+test('the legend has one row per voice with its meter and a guessed mark', () => {
+  const html = circleLegend(circleModel(msg({ drums, bass })))
+  expect(count(html, '<li')).toBe(2)
+  expect(html).toContain('3+3')
+  expect(html).toContain('2+2+2+2 <em')
+  expect(count(html, '<em')).toBe(1)
+})
