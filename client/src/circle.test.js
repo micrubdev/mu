@@ -93,3 +93,64 @@ test('pitched dots carry note names', () => {
   const m = circleModel(msg({ bass }))
   expect(m.rings[0].dots[0].label).toBe('C4')
 })
+
+// --- bar queue -------------------------------------------------------
+
+import { makeBarQueue } from './circle.js'
+
+const bar = (n, npc = 2e9) => ({ t: 'cycle', n, t0: String(n), npc, voices: {}, shapes: {} })
+
+test('current is the newest entry whose start has passed', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), 10)
+  q.push(bar(2), 12)
+  expect(q.current(9)).toBeNull()
+  expect(q.current(11.5).msg.n).toBe(1)
+  expect(q.current(12.1).msg.n).toBe(2)
+})
+
+test("angle uses the bar's own npc", () => {
+  const q = makeBarQueue()
+  q.push(bar(1, 2e9), 10)
+  q.push(bar(2, 1e9), 12)
+  expect(q.angle(11)).toBeCloseTo(Math.PI)
+  expect(q.angle(12.5)).toBeCloseTo(Math.PI)
+  expect(q.current(12.5).dur).toBe(1)
+})
+
+test('no double latency: angle is 0 exactly at start', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), 10)
+  expect(q.angle(10)).toBe(0)
+})
+
+test('a late next bar holds the playhead at the end of the turn', () => {
+  const q = makeBarQueue()
+  q.push(bar(1, 1e9), 10)
+  expect(q.angle(15)).toBe(2 * Math.PI)
+})
+
+test('null start (clock not ready) shows the bar now, angle null', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), null)
+  expect(q.current(0).msg.n).toBe(1)
+  expect(q.angle(0)).toBeNull()
+  q.push(bar(2), null)
+  expect(q.current(0).msg.n).toBe(2)
+})
+
+test('clear() drops everything', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), 10)
+  q.clear()
+  expect(q.current(11)).toBeNull()
+  expect(q.angle(11)).toBeNull()
+})
+
+test('entries older than the current one are discarded, and the queue never grows past 3', () => {
+  const q = makeBarQueue()
+  for (let n = 1; n <= 10; n++) q.push(bar(n), 10 + 2 * n)
+  expect(q.size()).toBeLessThanOrEqual(3)
+  q.current(100)
+  expect(q.size()).toBe(1)
+})

@@ -63,3 +63,45 @@ export function circleModel (msg) {
 
   return { rings, outer }
 }
+
+// Cycle messages arrive about a cycle before they are heard, so the
+// circle must not jump to a bar the moment it arrives. Each bar is
+// queued with its start in audio seconds -- clock.toAudioTime(t0), which
+// already includes the output latency -- and becomes current only when
+// audio time reaches it. A null start means the clock is not ready
+// (audio not started): such a bar is shown at once, with no playhead.
+const MAX_QUEUED = 3
+
+export function makeBarQueue () {
+  let entries = []
+
+  function current (now) {
+    let idx = -1
+    for (let i = 0; i < entries.length; i++) {
+      const s = entries[i].start
+      if (s === null || s <= now) idx = i
+    }
+    if (idx < 0) return null
+    if (idx > 0) entries = entries.slice(idx)
+    return entries[0]
+  }
+
+  return {
+    push (msg, start) {
+      entries.push({ msg, start, dur: msg.npc / 1e9 })
+      // A null start supersedes everything before it; and a background
+      // tab (no animation frames, so no current() calls) must not let
+      // the queue grow without bound.
+      if (start === null) entries = [entries[entries.length - 1]]
+      if (entries.length > MAX_QUEUED) entries = entries.slice(-MAX_QUEUED)
+    },
+    current,
+    angle (now) {
+      const cur = current(now)
+      if (!cur || cur.start === null) return null
+      return Math.min(TAU, TAU * (now - cur.start) / cur.dur)
+    },
+    clear () { entries = [] },
+    size () { return entries.length }
+  }
+}
