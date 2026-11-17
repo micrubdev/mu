@@ -165,16 +165,31 @@
   (pl/play! :d (notes :bd))
   (is (= [:bd] (:lanes (:d (pl/shapes 1))))))
 
+(def ^:private resting? (atom false))
+(def ^:private sometimes-rests
+  (p/pat (fn [span] (p/query (if @resting? (notes :bd) (notes :bd :sn)) span))))
+
 (deftest shapes-memory-survives-a-resting-bar
-  (let [pat (notes :bd :sn)]
-    (pl/play! :d pat)
-    (pl/shapes 0)
-    (is (= [:bd :sn] (:lanes (:d (pl/shapes 1)))))))
+  ;; one pattern object whose bar 1 leaves the snare out: the snare lane
+  ;; must survive, which it only does if memory is NOT reset every bar
+  ;; (e.g. by comparing patterns after apply-kit's fresh wrapper)
+  (reset! resting? false)
+  (pl/play! :d sometimes-rests)
+  (pl/shapes 0)
+  (reset! resting? true)
+  (is (= [:bd :sn] (:lanes (:d (pl/shapes 1)))))
+  (reset! resting? false))
 
 (deftest stop-and-hush-clear-shape-memory
   (doseq [clear! [#(pl/stop-voice! :d) pl/hush pl/reset-all!]]
     (pl/play! :d (notes :bd :sn))
     (pl/shapes 0)
     (clear!)
-    (pl/play! :d (notes :hh))
-    (is (= [:hh] (:lanes (:d (pl/shapes 1)))))))
+    (is (empty? @@#'pl/!shape-memory) "memory is gone straight after the clear")
+    (is (empty? @@#'pl/!last-shape) "and so is the fallback shape")))
+
+(deftest play-rejects-a-meter-over-64-steps
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"64"
+                        (pl/play! :d (notes :bd) {:meter [100000]})))
+  (is (thrown? clojure.lang.ExceptionInfo (pl/play! :d (notes :bd) {:meter [32 33]})))
+  (is (= :d (pl/play! :d (notes :bd) {:meter [16 16 16 16]}))))

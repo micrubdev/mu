@@ -76,3 +76,9 @@ test('the face has 60 ticks, 12 labels, a polygon per ring and the shared highli
   expect(svg).not.toContain('class="playhead"')
   expect(faceSvg(rings, Math.PI)).toContain('rotate(180)')
 })
+
+test('parseGrouping refuses more than 64 steps, so a typo cannot hang the tab', () => {
+  expect(parseGrouping('99999999')).toBeNull()
+  expect(parseGrouping('32+33')).toBeNull()
+  expect(parseGrouping('64')).toEqual([64])
+})

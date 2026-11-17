@@ -8,6 +8,9 @@
 import { meterAngles, polar, polygonPoints } from './geometry.js'
 
 export const MAX_RINGS = 4
+// Same ceiling as :meter in mu: past it a typo would draw (and click)
+// millions of ticks and hang the tab.
+export const MAX_STEPS = 64
 const TAU = 2 * Math.PI
 
 // name -> the rings it adds. Polyrhythms add two.
@@ -31,7 +34,7 @@ export function parseGrouping (text) {
   if (PRESETS[t]) return PRESETS[t].length === 1 ? [...PRESETS[t][0]] : null
   if (!/^\d+(\s*\+\s*\d+)*$/.test(t)) return null
   const g = t.split('+').map(s => Number(s.trim()))
-  return g.every(n => n > 0) ? g : null
+  return g.every(n => n > 0) && total(g) <= MAX_STEPS ? g : null
 }
 
 export function onSixtyGrid (grouping) {

@@ -117,9 +117,9 @@
   ([k x] (play! k x {}))
   ([k x opts]
    (when-let [m (:meter opts)]
-     (when-not (and (vector? m) (seq m) (every? pos-int? m))
-       (throw (ex-info (str ":meter must be a non-empty vector of positive integers, got "
-                            (pr-str m))
+     (when-not (and (vector? m) (seq m) (every? pos-int? m) (<= (reduce + m) 64))
+       (throw (ex-info (str ":meter must be a non-empty vector of positive integers"
+                            " totalling at most 64 steps, got " (pr-str m))
                        {:meter m}))))
    (forget-shape! k)
    (swap! !voices assoc k (merge {:pattern x :chan 0} opts))
