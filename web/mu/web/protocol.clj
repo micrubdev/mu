@@ -26,16 +26,29 @@
   [[k {:keys [chan muted? soloed? error]}]]
   [k {:chan chan :muted muted? :soloed soloed? :error error}])
 
+(defn- hit
+  "Bar fractions are exact rationals server-side; a double is plenty
+  for drawing, and JSON has nothing else."
+  [h]
+  (update h :at double))
+
+(defn- shape [s]
+  (when s (update s :hits #(mapv hit %))))
+
 (defn cycle-msg
-  "Build the per-cycle broadcast: the events plus a full state snapshot."
-  [{:keys [cycle t0 npc events]} player-state]
-  {:t      "cycle"
-   :n      cycle
-   :t0     (str t0)
-   :npc    npc
-   :bpm    (:bpm player-state)
-   :voices (into {} (map voice) (:voices player-state))
-   :msgs   (mapv (partial msg t0) events)})
+  "Build the per-cycle broadcast: the events, a full state snapshot, and
+  each voice's bar shape for the circle view (see mu.shape). A voice
+  with no shape yet is sent as null, not left out."
+  ([c player-state] (cycle-msg c player-state {}))
+  ([{:keys [cycle t0 npc events]} player-state shapes]
+   {:t      "cycle"
+    :n      cycle
+    :t0     (str t0)
+    :npc    npc
+    :bpm    (:bpm player-state)
+    :voices (into {} (map voice) (:voices player-state))
+    :msgs   (mapv (partial msg t0) events)
+    :shapes (into {} (map (fn [[k s]] [k (shape s)])) shapes)}))
 
 (defn pong-msg
   "Reply to a clock-sync ping: echo the client's own clock, add ours."

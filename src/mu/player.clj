@@ -8,7 +8,8 @@
   (:require [mu.clock :as clk]
             [mu.kit :as kit]
             [mu.midi :as midi]
-            [mu.pattern :as p]))
+            [mu.pattern :as p]
+            [mu.shape :as shape]))
 
 (defonce ^:private !voices    (atom {}))
 (defonce ^:private !muted     (atom #{}))
@@ -16,6 +17,13 @@
 (defonce ^:private !last-good (atom {}))
 (defonce ^:private !transport (atom nil))
 (defonce ^:private !errors    (atom {}))
+;; Per-voice drawing state for the web view's circle. Touched only by
+;; `shapes` (the broadcaster thread) and cleared with the voice.
+(defonce ^:private !shape-memory (atom {}))
+(defonce ^:private !last-shape   (atom {}))
+
+(defn- forget-shape! [k] (swap! !shape-memory dissoc k) (swap! !last-shape dissoc k))
+(defn- forget-shapes! [] (reset! !shape-memory {}) (reset! !last-shape {}))
 
 (defn voices [] @!voices)
 
@@ -47,6 +55,32 @@
           (for [[k v] @!voices
                 :when (if solo (= k solo) (not (mute k)))]
             [k (update v :pattern #(apply-kit v (resolve-pattern %)))]))))
+
+(defn shapes
+  "What every registered voice looks like in cycle `n`, for the web
+  view's circle: {voice-key shape-or-nil}, muted voices included.
+
+  Runs on the broadcaster thread, never the render thread: it derefs
+  each var again, so an eval landing between the render and this call
+  can make one drawn bar differ from the heard one. Accepted -- it lasts
+  a bar. Never throws: a voice whose pattern throws keeps its last good
+  shape, or nil if it never had one."
+  [n]
+  (into {}
+        (for [[k v] @!voices]
+          [k (try
+               (let [pat (resolve-pattern (:pattern v))
+                     mem (get @!shape-memory k)
+                     ;; Compare BEFORE the kit: apply-kit wraps a fresh
+                     ;; object every call, which would reset every bar.
+                     mem (when (identical? pat (:pattern mem)) mem)
+                     evs (p/query (apply-kit v pat) [n (inc n)])
+                     [sh mem'] (shape/voice-shape evs n (:meter v) mem)]
+                 (swap! !shape-memory assoc k (assoc mem' :pattern pat))
+                 (swap! !last-shape assoc k sh)
+                 sh)
+               (catch Throwable _
+                 (get @!last-shape k)))])))
 
 (defn safe-render
   "Query one voice for one cycle, surviving anything the pattern does.
@@ -82,10 +116,16 @@
   ([x] (play! (if (var? x) (keyword (name (.sym ^clojure.lang.Var x))) :default) x {}))
   ([k x] (play! k x {}))
   ([k x opts]
+   (when-let [m (:meter opts)]
+     (when-not (and (vector? m) (seq m) (every? pos-int? m) (<= (reduce + m) 64))
+       (throw (ex-info (str ":meter must be a non-empty vector of positive integers"
+                            " totalling at most 64 steps, got " (pr-str m))
+                       {:meter m}))))
+   (forget-shape! k)
    (swap! !voices assoc k (merge {:pattern x :chan 0} opts))
    k))
 
-(defn stop-voice! [k] (swap! !voices dissoc k) (swap! !last-good dissoc k) (swap! !errors dissoc k) k)
+(defn stop-voice! [k] (swap! !voices dissoc k) (swap! !last-good dissoc k) (swap! !errors dissoc k) (forget-shape! k) k)
 
 (defn hush
   "Stop every voice and silence anything sounding."
@@ -93,6 +133,7 @@
   (reset! !voices {})
   (reset! !last-good {})
   (reset! !errors {})
+  (forget-shapes!)
   (when-let [t @!transport] (clk/panic! t))
   :hushed)
 
@@ -112,6 +153,7 @@
   []
   (reset! !voices {}) (reset! !muted #{}) (reset! !soloed nil)
   (reset! !last-good {}) (reset! !errors {})
+  (forget-shapes!)
   :reset)
 
 (defn begin!

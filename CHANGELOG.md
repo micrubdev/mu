@@ -7,6 +7,20 @@ This project has not cut a numbered release yet; everything below is on `main`.
 
 ## [Unreleased]
 
+### Circle view and meters (2026-11-17)
+
+- **Circle view** in the web UI: each voice's bar as a ring, with the meter
+  drawn as spokes (beats) and ticks (subdivisions), dots sized by velocity
+  and a playhead held in step with the browser audio. Drum voices get a
+  ring per drum, and rings stay put through resting bars.
+- **`:meter` on `play!`**: a grouping vector (`[3 3]` 6/8, `[2 2 3]` 7/8)
+  for drawing only. Without it the meter is guessed from the onsets and
+  remembered until the pattern changes.
+- **Wire**: the cycle broadcast carries a `shapes` map per voice, computed
+  on the broadcaster thread; the render and dispatch paths are untouched.
+- **`/compare.html`**: a standalone page comparing meters on a 60-step
+  circle, for teaching.
+
 ### Textbeat vocabulary (2026-09-17)
 
 Six borrowings from [textbeat](https://github.com/flipcoder/textbeat),

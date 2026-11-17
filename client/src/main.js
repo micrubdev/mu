@@ -1,4 +1,5 @@
 import { OUTPUT_LATENCY_MS, PING_INTERVAL_MS } from './config.js'
+import { circleModel, makeBarQueue, renderCircle } from './circle.js'
 import { makeClock } from './clock.js'
 import { makeEditor } from './editor.js'
 import { connectionState, hudModel, renderHud } from './hud.js'
@@ -11,6 +12,7 @@ const audio = new AudioContext()
 const clock = makeClock()
 const synth = makeSynth(audio, { soundfontUrl: '/gm.sf2' })
 const hudEl = document.getElementById('hud')
+const circleEl = document.getElementById('circle')
 const outEl = document.getElementById('output')
 const startBtn = document.getElementById('start')
 const latencyEl = document.getElementById('latency')
@@ -38,6 +40,11 @@ function appendOut (text) {
 // stopped, which is exactly when a transport line matters most.
 let model = { cycle: '--', bpm: null, drops: 0, voices: [], events: [] }
 let pingId = 0
+
+// Bars wait in the queue until they are heard; see makeBarQueue.
+const bars = makeBarQueue()
+let circleMsg = null
+let circle = circleModel({})
 const pending = new Map()
 
 // Set the instant a reconnect's first cycle arrives, and consumed (cleared)
@@ -77,6 +84,7 @@ const hud = connect(wsUrl('/hud'), {
     clock.reset()
     synth.allNotesOff()
     pending.clear()
+    bars.clear()
     justReconnected = true
     pingBurst()
   },
@@ -102,6 +110,11 @@ const hud = connect(wsUrl('/hud'), {
     if (gap || dropped) synth.allNotesOff()
     synth.schedule(events)
 
+    // A broken sequence means anything queued belongs to a stale
+    // timeline. toAudioTime already includes the output latency.
+    if (gap || dropped) bars.clear()
+    bars.push(m, clock.ready() ? clock.toAudioTime(BigInt(m.t0)) : null)
+
     model = hudModel(m, model, { resumed: justReconnected })
     justReconnected = false
     lastCycleAt = performance.now() / 1000
@@ -115,6 +128,20 @@ function paint () {
             connectionState({ socketOpen: hud.isOpen(),
                               lastCycleAt, now: performance.now() / 1000 }))
 }
+// The circle runs on animation frames: audio.currentTime is the time base,
+// the same one the synth schedules against.
+function frame () {
+  const now = audio.currentTime
+  const cur = bars.current(now)
+  if (cur && cur.msg !== circleMsg) {
+    circleMsg = cur.msg
+    circle = circleModel(cur.msg)
+  }
+  renderCircle(circleEl, circle, cur ? bars.angle(now) : null)
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+
 // Repaint on a slow timer as well as on arrival, so "playing" decays to
 // "stopped" when the cycles stop rather than freezing on the last one.
 setInterval(paint, 500)

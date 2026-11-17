@@ -93,3 +93,26 @@
                                             :note 60 :vel 0.5}}) ds)}
           rt (proto/decode (proto/encode (proto/cycle-msg c sample-state)))]
       (= ds (map :d (:msgs rt))))))
+
+(def sample-shapes
+  {:d {:meter [3 3] :source :inferred :kind :drum :lanes [:bd :sn]
+       :hits [{:at 1/4 :drum :bd :note 36 :vel 0.8}
+              {:at 0 :drum :sn :note 38 :vel 1}]}
+   :x nil})
+
+(deftest shapes-encode-for-the-wire
+  (let [rt (proto/decode (proto/encode (proto/cycle-msg sample-cycle sample-state sample-shapes)))
+        d  (get-in rt [:shapes :d])]
+    (is (= [3 3] (:meter d)))
+    (is (= "inferred" (:source d)))
+    (is (= "drum" (:kind d)))
+    (is (= ["bd" "sn"] (:lanes d)))
+    (is (= 0.25 (:at (first (:hits d)))) "a rational bar fraction goes out as a double")
+    (is (instance? Double (:at (second (:hits d)))) "even a whole-number one")
+    (is (= "bd" (:drum (first (:hits d)))))
+    (is (= 36 (:note (first (:hits d)))))
+    (is (contains? (:shapes rt) :x))
+    (is (nil? (get-in rt [:shapes :x])) "a voice with no shape is null, not missing")))
+
+(deftest cycle-msg-without-shapes-sends-an-empty-map
+  (is (= {} (:shapes (proto/cycle-msg sample-cycle sample-state)))))

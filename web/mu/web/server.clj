@@ -43,7 +43,7 @@
                   (try
                     (when-let [c (tap/poll! t 200)]
                       (when (seq @!hud-clients)
-                        (broadcast! !hud-clients (proto/encode (proto/cycle-msg c (player/state))))))
+                        (broadcast! !hud-clients (proto/encode (proto/cycle-msg c (player/state) (player/shapes (:cycle c)))))))
                     (catch Throwable e
                       (println "mu.web.server: broadcaster iteration failed:" (.getMessage e)))))
                 (finally (tap/unsubscribe! t)))))

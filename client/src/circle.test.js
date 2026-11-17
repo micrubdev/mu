@@ -1,0 +1,217 @@
+import { expect, test } from 'vitest'
+import { circleModel, DOT_MAX, DOT_MIN, MIN_RING, R_INNER } from './circle.js'
+
+const drums = {
+  meter: [2, 2, 2, 2], source: 'inferred', kind: 'drum', lanes: ['bd', 'sn', 'hh'],
+  hits: [
+    { at: 0, drum: 'bd', note: 36, vel: 0.8 },
+    { at: 0.5, drum: 'sn', note: 38, vel: 1 },
+    { at: 0.75, drum: 'hh', note: 42, vel: 0 }
+  ]
+}
+const bass = {
+  meter: [3, 3], source: 'declared', kind: 'pitched', lanes: [],
+  hits: [{ at: 0, note: 60, vel: 0.8 }]
+}
+const msg = (shapes, voices = {}) => ({ t: 'cycle', n: 1, t0: '0', npc: 1e9, voices, shapes })
+
+test('voices sorted by name, drum voice gets a ring per lane in wire order', () => {
+  const m = circleModel(msg({ drums, bass }))
+  expect(m.rings.map(r => [r.voice, r.lane])).toEqual(
+    [['bass', null], ['drums', 'bd'], ['drums', 'sn'], ['drums', 'hh']])
+  expect(m.rings[0].r).toBeLessThan(m.rings[1].r)
+})
+
+test('a resting lane keeps its ring', () => {
+  const resting = { ...drums, hits: [drums.hits[0]] }
+  const m = circleModel(msg({ drums: resting }))
+  expect(m.rings.map(r => r.lane)).toEqual(['bd', 'sn', 'hh'])
+  expect(m.rings[1].dots).toEqual([])
+})
+
+test('each lane only carries its own hits, at 2π·at', () => {
+  const m = circleModel(msg({ drums }))
+  const sn = m.rings.find(r => r.lane === 'sn')
+  expect(sn.dots).toHaveLength(1)
+  expect(sn.dots[0].angle).toBeCloseTo(Math.PI)
+  expect(sn.dots[0].r).toBe(sn.r)
+})
+
+test('dot size scales with velocity', () => {
+  const m = circleModel(msg({ drums }))
+  expect(m.rings.find(r => r.lane === 'sn').dots[0].size).toBe(DOT_MAX)
+  expect(m.rings.find(r => r.lane === 'hh').dots[0].size).toBe(DOT_MIN)
+})
+
+test('meter label and inferred flag come from the shape', () => {
+  const m = circleModel(msg({ drums, bass }))
+  expect(m.rings[0].meterLabel).toBe('3+3')
+  expect(m.rings[0].inferred).toBe(false)
+  expect(m.rings[1].meterLabel).toBe('2+2+2+2')
+  expect(m.rings[1].inferred).toBe(true)
+  expect(m.rings[0].spokes).toHaveLength(2)
+  expect(m.rings[0].ticks).toHaveLength(6)
+})
+
+test('muted and error flags come from msg.voices', () => {
+  const m = circleModel(msg({ drums, bass }, {
+    drums: { chan: 9, muted: true, soloed: false, error: null },
+    bass: { chan: 0, muted: false, soloed: false, error: 'boom' }
+  }))
+  expect(m.rings[0]).toMatchObject({ voice: 'bass', muted: false, error: true })
+  expect(m.rings[1]).toMatchObject({ voice: 'drums', muted: true, error: false })
+})
+
+test('a null shape draws no ring but others remain', () => {
+  const m = circleModel(msg({ bad: null, bass }))
+  expect(m.rings.map(r => r.voice)).toEqual(['bass'])
+})
+
+test('a voice that has never had a hit draws no ring', () => {
+  const m = circleModel(msg({ quiet: { ...bass, kind: null, hits: [] }, bass }))
+  expect(m.rings.map(r => r.voice)).toEqual(['bass'])
+})
+
+test('no shapes at all is an empty model, not a crash', () => {
+  expect(circleModel(msg(undefined)).rings).toEqual([])
+  expect(circleModel(msg({})).rings).toEqual([])
+})
+
+test('many rings shrink but never below MIN_RING, and never overlap', () => {
+  const lanes = Array.from({ length: 20 }, (_, i) => `d${i}`)
+  const m = circleModel(msg({ big: { ...drums, lanes, hits: [] } }))
+  expect(m.rings).toHaveLength(20)
+  m.rings.forEach(r => expect(r.width).toBeGreaterThanOrEqual(MIN_RING))
+  for (let i = 1; i < m.rings.length; i++) {
+    expect(m.rings[i].r - m.rings[i - 1].r).toBeGreaterThanOrEqual(m.rings[i].width - 1e-9)
+  }
+  expect(m.rings[0].r - m.rings[0].width / 2).toBeGreaterThanOrEqual(R_INNER - 1e-9)
+  expect(m.outer).toBeGreaterThanOrEqual(m.rings[19].r + m.rings[19].width / 2 - 1e-9)
+})
+
+test('pitched dots carry note names', () => {
+  const m = circleModel(msg({ bass }))
+  expect(m.rings[0].dots[0].label).toBe('C4')
+})
+
+// --- bar queue -------------------------------------------------------
+
+import { makeBarQueue } from './circle.js'
+
+const bar = (n, npc = 2e9) => ({ t: 'cycle', n, t0: String(n), npc, voices: {}, shapes: {} })
+
+test('current is the newest entry whose start has passed', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), 10)
+  q.push(bar(2), 12)
+  expect(q.current(9)).toBeNull()
+  expect(q.current(11.5).msg.n).toBe(1)
+  expect(q.current(12.1).msg.n).toBe(2)
+})
+
+test("angle uses the bar's own npc", () => {
+  const q = makeBarQueue()
+  q.push(bar(1, 2e9), 10)
+  q.push(bar(2, 1e9), 12)
+  expect(q.angle(11)).toBeCloseTo(Math.PI)
+  expect(q.angle(12.5)).toBeCloseTo(Math.PI)
+  expect(q.current(12.5).dur).toBe(1)
+})
+
+test('no double latency: angle is 0 exactly at start', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), 10)
+  expect(q.angle(10)).toBe(0)
+})
+
+test('a late next bar holds the playhead at the end of the turn', () => {
+  const q = makeBarQueue()
+  q.push(bar(1, 1e9), 10)
+  expect(q.angle(15)).toBe(2 * Math.PI)
+})
+
+test('null start (clock not ready) shows the bar now, angle null', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), null)
+  expect(q.current(0).msg.n).toBe(1)
+  expect(q.angle(0)).toBeNull()
+  q.push(bar(2), null)
+  expect(q.current(0).msg.n).toBe(2)
+})
+
+test('clear() drops everything', () => {
+  const q = makeBarQueue()
+  q.push(bar(1), 10)
+  q.clear()
+  expect(q.current(11)).toBeNull()
+  expect(q.angle(11)).toBeNull()
+})
+
+test('entries older than the current one are discarded, and the queue never grows past 3', () => {
+  const q = makeBarQueue()
+  for (let n = 1; n <= 10; n++) q.push(bar(n), 10 + 2 * n)
+  expect(q.size()).toBeLessThanOrEqual(3)
+  q.current(100)
+  expect(q.size()).toBe(1)
+})
+
+// --- svg -------------------------------------------------------------
+
+import { circleSvg } from './circle.js'
+
+const count = (s, needle) => s.split(needle).length - 1
+
+test('circleSvg draws spokes, ticks, dots and no playhead when angle is null', () => {
+  const m = circleModel(msg({ drums, bass }))
+  const svg = circleSvg(m, null)
+  const spokes = m.rings.reduce((a, r) => a + r.spokes.length, 0)
+  const ticks = m.rings.reduce((a, r) => a + r.ticks.length, 0)
+  const dots = m.rings.reduce((a, r) => a + r.dots.length, 0)
+  expect(svg.startsWith('<svg')).toBe(true)
+  expect(count(svg, 'class="spoke"')).toBe(spokes)
+  expect(count(svg, 'class="tick"')).toBe(ticks)
+  expect(count(svg, 'class="hit')).toBe(dots)
+  expect(svg).not.toContain('class="playhead"')
+})
+
+test('circleSvg rotates the playhead to the angle, in degrees', () => {
+  const svg = circleSvg(circleModel(msg({ bass })), Math.PI / 2)
+  expect(svg).toContain('class="playhead"')
+  expect(svg).toContain('rotate(90)')
+})
+
+test('a dot the playhead just passed is lit, one far behind is not', () => {
+  const m = circleModel(msg({ drums }))       // hits at 0, π, 1.5π
+  const svg = circleSvg(m, Math.PI + 0.02)
+  expect(count(svg, 'class="hit lit"')).toBe(1)
+})
+
+test('muted and error rings carry their classes', () => {
+  const m = circleModel(msg({ bass }, { bass: { muted: true, error: 'x' } }))
+  const svg = circleSvg(m, null)
+  expect(svg).toContain('muted')
+  expect(svg).toContain('error')
+})
+
+test('voice names are escaped', () => {
+  const svg = circleSvg(circleModel(msg({ '<b>': bass })), null)
+  expect(svg).not.toContain('<b>')
+  expect(svg).toContain('&lt;b&gt;')
+})
+
+test('the viewBox grows with the model', () => {
+  const lanes = Array.from({ length: 20 }, (_, i) => `d${i}`)
+  const m = circleModel(msg({ big: { ...drums, lanes, hits: [] } }))
+  const half = Number(circleSvg(m, null).match(/viewBox="(-?[\d.]+)/)[1]) * -1
+  expect(half).toBeGreaterThanOrEqual(m.outer)
+})
+
+import { circleLegend } from './circle.js'
+
+test('the legend has one row per voice with its meter and a guessed mark', () => {
+  const html = circleLegend(circleModel(msg({ drums, bass })))
+  expect(count(html, '<li')).toBe(2)
+  expect(html).toContain('3+3')
+  expect(html).toContain('2+2+2+2 <em')
+  expect(count(html, '<em')).toBe(1)
+})

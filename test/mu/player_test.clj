@@ -110,3 +110,86 @@
       (finally
         (reset! @#'pl/!transport nil)
         (clk/stop! trans)))))
+
+;; --- :meter and shapes -----------------------------------------------
+
+(deftest play-rejects-a-bad-meter
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #":meter"
+                        (pl/play! :d (notes :bd) {:meter [3 0]})))
+  (is (thrown? clojure.lang.ExceptionInfo (pl/play! :d (notes :bd) {:meter []})))
+  (is (thrown? clojure.lang.ExceptionInfo (pl/play! :d (notes :bd) {:meter '(3 3)})))
+  (is (thrown? clojure.lang.ExceptionInfo (pl/play! :d (notes :bd) {:meter [3 1.5]})))
+  (is (empty? (pl/voices)) "a rejected play! registers nothing"))
+
+(deftest play-accepts-a-good-meter
+  (pl/play! :d (notes :bd :sn) {:meter [2 2 3]})
+  (is (= [2 2 3] (:meter (:d (pl/voices))))))
+
+(deftest shapes-cover-muted-voices
+  (pl/play! :d (notes :bd :sn) {:meter [3 3]})
+  (pl/mute :d)
+  (is (= [3 3] (get-in (pl/shapes 0) [:d :meter]))))
+
+(deftest shapes-resolve-drums-through-the-kit
+  (pl/play! :d (notes :bd :sn))
+  (let [sh (:d (pl/shapes 0))]
+    (is (= [:bd :sn] (:lanes sh)))
+    (is (= [36 38] (map :note (:hits sh))))))
+
+(def ^:private boom? (atom false))
+(def ^:private flaky
+  (p/pat (fn [span] (if @boom? (throw (ex-info "boom" {})) (p/query (notes :bd :sn) span)))))
+
+(deftest shapes-survive-a-throwing-pattern
+  (reset! boom? false)
+  (pl/play! :x flaky)
+  (pl/play! :ok (notes c4))
+  (let [good (:x (pl/shapes 0))]
+    (reset! boom? true)
+    (let [s1 (pl/shapes 1)]
+      (is (= good (:x s1)) "the last good shape stands in")
+      (is (some? (:ok s1)) "neighbours are unaffected")))
+  (reset! boom? false))
+
+(deftest shapes-give-nil-for-a-voice-that-never-worked
+  (pl/play! :bad (p/pat (fn [_] (throw (ex-info "boom" {})))))
+  (pl/play! :ok (notes c4))
+  (let [s (pl/shapes 0)]
+    (is (contains? s :bad))
+    (is (nil? (:bad s)))
+    (is (some? (:ok s)))))
+
+(deftest shapes-memory-resets-on-redefinition
+  (pl/play! :d (notes :bd :sn))
+  (pl/shapes 0)
+  (pl/play! :d (notes :bd))
+  (is (= [:bd] (:lanes (:d (pl/shapes 1))))))
+
+(def ^:private resting? (atom false))
+(def ^:private sometimes-rests
+  (p/pat (fn [span] (p/query (if @resting? (notes :bd) (notes :bd :sn)) span))))
+
+(deftest shapes-memory-survives-a-resting-bar
+  ;; one pattern object whose bar 1 leaves the snare out: the snare lane
+  ;; must survive, which it only does if memory is NOT reset every bar
+  ;; (e.g. by comparing patterns after apply-kit's fresh wrapper)
+  (reset! resting? false)
+  (pl/play! :d sometimes-rests)
+  (pl/shapes 0)
+  (reset! resting? true)
+  (is (= [:bd :sn] (:lanes (:d (pl/shapes 1)))))
+  (reset! resting? false))
+
+(deftest stop-and-hush-clear-shape-memory
+  (doseq [clear! [#(pl/stop-voice! :d) pl/hush pl/reset-all!]]
+    (pl/play! :d (notes :bd :sn))
+    (pl/shapes 0)
+    (clear!)
+    (is (empty? @@#'pl/!shape-memory) "memory is gone straight after the clear")
+    (is (empty? @@#'pl/!last-shape) "and so is the fallback shape")))
+
+(deftest play-rejects-a-meter-over-64-steps
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"64"
+                        (pl/play! :d (notes :bd) {:meter [100000]})))
+  (is (thrown? clojure.lang.ExceptionInfo (pl/play! :d (notes :bd) {:meter [32 33]})))
+  (is (= :d (pl/play! :d (notes :bd) {:meter [16 16 16 16]}))))

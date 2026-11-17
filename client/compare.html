@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Meters on 60</title>
+  </head>
+  <body>
+    <main id="compare">
+      <header>
+        <h1>Meters on a 60-step circle</h1>
+        <p class="lede">One turn is one bar. 60 divides by 2, 3, 4, 5, 6, 10, 12, 15, 20 and 30, so most meters land exactly on the same ticks, like minutes on a clock. Add meters and see where their beats meet.</p>
+      </header>
+      <div id="face"></div>
+      <p id="caption" aria-live="polite"></p>
+      <section class="controls">
+        <div id="presets" class="presets"></div>
+        <form id="custom-form" class="custom">
+          <input id="custom" placeholder="your own, e.g. 2+2+3" autocomplete="off">
+          <button type="submit">add</button>
+        </form>
+        <p id="message" role="status"></p>
+        <div class="transport">
+          <button id="play" type="button">play</button>
+        </div>
+        <div class="bar-row">
+          <label for="bar-ms">bar length
+            <input id="bar-ms" type="number" min="250" max="12000" step="10" value="4000" inputmode="numeric"> ms
+          </label>
+          <input id="bar" type="range" min="250" max="12000" step="10" value="4000" aria-label="bar length in milliseconds">
+        </div>
+      </section>
+      <ul id="rings" class="rings"></ul>
+    </main>
+    <script type="module" src="/src/compare.js"></script>
+  </body>
+</html>
