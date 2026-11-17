@@ -150,8 +150,15 @@ $('rings').addEventListener('click', e => {
 
 $('play').addEventListener('click', () => (state.playing ? stop() : play()))
 
-$('bar').addEventListener('input', () => {
-  const next = Number($('bar').value)
+// Bar length is set in milliseconds, by slider or by typing; both stay
+// in sync. Typed values are clamped to the slider's range.
+const BAR_MIN_MS = 250
+const BAR_MAX_MS = 12000
+
+function setBarMs (ms) {
+  if (!Number.isFinite(ms)) return
+  ms = Math.round(Math.min(BAR_MAX_MS, Math.max(BAR_MIN_MS, ms)))
+  const next = ms / 1000
   if (state.playing) {
     // Keep the playhead where it is: re-anchor so the phase carries over.
     const now = audio.currentTime
@@ -163,7 +170,14 @@ $('bar').addEventListener('input', () => {
     state.scheduledUntil = now
   }
   state.barSec = next
-  $('bar-value').textContent = `${next} s`
+  $('bar').value = String(ms)
+  if (document.activeElement !== $('bar-ms')) $('bar-ms').value = String(ms)
+}
+
+$('bar').addEventListener('input', () => setBarMs(Number($('bar').value)))
+$('bar-ms').addEventListener('change', () => {
+  setBarMs(Number($('bar-ms').value))
+  $('bar-ms').value = String(Math.round(state.barSec * 1000))
 })
 
 drawStatic()
