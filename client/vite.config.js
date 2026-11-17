@@ -8,7 +8,13 @@ export default defineConfig({
   // on its own skip list, and .gitignore's tracked client/dist/.gitkeep is
   // not on it -- emptyOutDir: true deletes that tracked placeholder on
   // every build. Do not flip this back without also exempting .gitkeep.
-  build: { outDir: 'dist', emptyOutDir: false },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: false,
+    // Two pages: the live editor, and the standalone meter-comparison
+    // page for teaching, which needs no JVM or socket.
+    rollupOptions: { input: { main: 'index.html', compare: 'compare.html' } }
+  },
   server: {
     // In dev, vite serves the page and proxies both sockets to the JVM,
     // so the editor reloads without rebuilding.
